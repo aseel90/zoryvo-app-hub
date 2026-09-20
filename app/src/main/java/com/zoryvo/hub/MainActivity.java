@@ -29,6 +29,8 @@ import java.io.FileInputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.security.MessageDigest;
+import java.util.ArrayList;
+import java.util.List;
 
 public class MainActivity extends Activity {
     private LinearLayout content;
@@ -183,12 +185,39 @@ public class MainActivity extends Activity {
         name.setTextColor(Color.WHITE);
         name.setTypeface(name.getTypeface(), Typeface.BOLD);
 
+        LinearLayout badges = new LinearLayout(this);
+        badges.setOrientation(LinearLayout.HORIZONTAL);
+        badges.setGravity(Gravity.START);
+        badges.setPadding(0, dp(7), 0, dp(5));
+
+        for (String formFactor : app.formFactors) {
+            TextView badge = new TextView(this);
+            badge.setText(formFactorLabel(formFactor));
+            badge.setTextSize(11);
+            badge.setTextColor(Color.WHITE);
+            badge.setGravity(Gravity.CENTER);
+            badge.setPadding(dp(9), dp(4), dp(9), dp(4));
+
+            GradientDrawable badgeBackground = new GradientDrawable();
+            badgeBackground.setCornerRadius(dp(20));
+            badgeBackground.setColor(Color.rgb(28, 72, 111));
+            badgeBackground.setStroke(dp(1), Color.rgb(63, 139, 194));
+            badge.setBackground(badgeBackground);
+
+            LinearLayout.LayoutParams badgeLp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT);
+            badgeLp.setMarginEnd(dp(6));
+            badges.addView(badge, badgeLp);
+        }
+
         TextView meta = new TextView(this);
         meta.setText(app.notes.isEmpty() ? state : state + "\n" + app.notes);
         meta.setTextSize(14);
         meta.setTextColor(Color.rgb(175, 198, 220));
 
         textBox.addView(name);
+        if (!app.formFactors.isEmpty()) textBox.addView(badges);
         textBox.addView(meta);
         card.addView(textBox, new LinearLayout.LayoutParams(
                 compact ? LinearLayout.LayoutParams.MATCH_PARENT : 0,
@@ -217,6 +246,13 @@ public class MainActivity extends Activity {
         lp.bottomMargin = dp(12);
         content.addView(card, lp);
         return button;
+    }
+
+    private String formFactorLabel(String value) {
+        if ("tv".equalsIgnoreCase(value)) return "TV";
+        if ("phone".equalsIgnoreCase(value)) return "Phone";
+        if ("tablet".equalsIgnoreCase(value)) return "Tablet";
+        return value;
     }
 
     private Long installedVersion(String packageName) {
@@ -361,9 +397,11 @@ public class MainActivity extends Activity {
     static class AppItem {
         final String id, name, packageName, versionName, apkUrl, notes, sha256;
         final long versionCode;
+        final List<String> formFactors;
 
         AppItem(String id, String name, String packageName, long versionCode,
-                String versionName, String apkUrl, String notes, String sha256) {
+                String versionName, String apkUrl, String notes, String sha256,
+                List<String> formFactors) {
             this.id = id;
             this.name = name;
             this.packageName = packageName;
@@ -372,10 +410,20 @@ public class MainActivity extends Activity {
             this.apkUrl = apkUrl;
             this.notes = notes;
             this.sha256 = sha256;
+            this.formFactors = formFactors;
         }
 
         static AppItem from(JSONObject o) {
             long code = o.optLong("versionCode", 1);
+            List<String> formFactors = new ArrayList<>();
+            JSONArray values = o.optJSONArray("formFactors");
+            if (values != null) {
+                for (int i = 0; i < values.length(); i++) {
+                    String value = values.optString(i, "").trim();
+                    if (!value.isEmpty()) formFactors.add(value);
+                }
+            }
+
             return new AppItem(
                     o.optString("id"),
                     o.optString("name"),
@@ -384,7 +432,8 @@ public class MainActivity extends Activity {
                     o.optString("versionName", Long.toString(code)),
                     o.optString("apkUrl"),
                     o.optString("notes", ""),
-                    o.optString("sha256", "")
+                    o.optString("sha256", ""),
+                    formFactors
             );
         }
     }
