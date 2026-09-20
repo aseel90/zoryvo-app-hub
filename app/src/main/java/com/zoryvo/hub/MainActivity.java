@@ -12,7 +12,11 @@ import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
 import android.view.Gravity;
+import android.view.View;
+import android.view.ViewGroup;
 import android.widget.Button;
+import android.widget.HorizontalScrollView;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.ScrollView;
@@ -21,27 +25,30 @@ import android.widget.Toast;
 
 import androidx.core.content.FileProvider;
 
-import org.json.JSONArray;
-import org.json.JSONObject;
+import com.zoryvo.hub.model.AppItem;
+import com.zoryvo.hub.network.CatalogClient;
+import com.zoryvo.hub.ui.AppCardView;
 
 import java.io.File;
 import java.io.FileInputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.security.MessageDigest;
-import java.util.ArrayList;
 import java.util.List;
 
 public class MainActivity extends Activity {
-    private LinearLayout content;
+    private LinearLayout apps;
     private TextView status;
     private Button refreshButton;
-    private boolean compact;
+    private LinearLayout hubUpdateBanner;
+    private TextView hubUpdateText;
+    private Button hubUpdateButton;
+    private boolean wide;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        compact = getResources().getConfiguration().screenWidthDp < 600;
+        wide = getResources().getConfiguration().screenWidthDp >= 700;
         buildShell();
         loadCatalog(false);
     }
@@ -49,210 +56,230 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
-        if (content != null && content.getChildCount() > 0) loadCatalog(true);
+        if (apps != null && apps.getChildCount() > 0) loadCatalog(true);
     }
 
     private void buildShell() {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        int side = compact ? dp(16) : dp(34);
-        root.setPadding(side, compact ? dp(14) : dp(22), side, compact ? dp(14) : dp(22));
-        root.setBackgroundColor(Color.rgb(7, 17, 31));
+        root.setBackgroundColor(Color.rgb(6, 14, 27));
+        int side = dp(wide ? 42 : 18);
+        root.setPadding(side, dp(wide ? 28 : 16), side, dp(18));
 
-        LinearLayout header = new LinearLayout(this);
-        header.setOrientation(compact ? LinearLayout.VERTICAL : LinearLayout.HORIZONTAL);
-        header.setGravity(compact ? Gravity.START : Gravity.CENTER_VERTICAL);
+        LinearLayout top = new LinearLayout(this);
+        top.setOrientation(wide ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL);
+        top.setGravity(wide ? Gravity.CENTER_VERTICAL : Gravity.START);
 
-        LinearLayout titleBox = new LinearLayout(this);
-        titleBox.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout brand = new LinearLayout(this);
+        brand.setOrientation(LinearLayout.HORIZONTAL);
+        brand.setGravity(Gravity.CENTER_VERTICAL);
 
-        TextView title = new TextView(this);
-        title.setText("ZORYVO");
-        title.setTextSize(compact ? 26 : 30);
-        title.setTextColor(Color.WHITE);
-        title.setTypeface(title.getTypeface(), Typeface.BOLD);
+        ImageView logo = new ImageView(this);
+        logo.setImageResource(R.drawable.zoryvo_icon);
+        logo.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        logo.setBackground(roundRect(Color.rgb(13, 27, 47), 16, Color.rgb(45, 79, 112), 1));
+        logo.setClipToOutline(true);
+        brand.addView(logo, new LinearLayout.LayoutParams(dp(wide ? 58 : 48), dp(wide ? 58 : 48)));
 
-        TextView subtitle = new TextView(this);
-        subtitle.setText("تطبيقاتك في مكان واحد");
-        subtitle.setTextSize(compact ? 13 : 15);
-        subtitle.setTextColor(Color.rgb(150, 177, 202));
+        LinearLayout brandText = new LinearLayout(this);
+        brandText.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams brandTextLp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        brandTextLp.setMarginStart(dp(14));
 
-        titleBox.addView(title);
-        titleBox.addView(subtitle);
-        header.addView(titleBox, new LinearLayout.LayoutParams(
-                compact ? LinearLayout.LayoutParams.MATCH_PARENT : 0,
+        TextView title = text("ZORYVO", wide ? 30 : 25, Color.WHITE, true);
+        TextView subtitle = text("مركز تطبيقاتك وتحديثاتها", wide ? 15 : 13, Color.rgb(145, 174, 204), false);
+        brandText.addView(title);
+        brandText.addView(subtitle);
+        brand.addView(brandText, brandTextLp);
+
+        top.addView(brand, new LinearLayout.LayoutParams(
+                wide ? 0 : LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
-                compact ? 0f : 1f));
+                wide ? 1f : 0f));
+
+        LinearLayout actions = new LinearLayout(this);
+        actions.setOrientation(LinearLayout.HORIZONTAL);
+        actions.setGravity(Gravity.CENTER_VERTICAL);
+        if (!wide) actions.setPadding(0, dp(12), 0, 0);
+
+        TextView version = text("v" + BuildConfig.VERSION_NAME, 12, Color.rgb(137, 170, 204), false);
+        version.setBackground(roundRect(Color.rgb(14, 30, 50), 30, Color.rgb(44, 74, 103), 1));
+        version.setPadding(dp(11), dp(7), dp(11), dp(7));
+        actions.addView(version);
 
         refreshButton = new Button(this);
-        refreshButton.setText("تحديث القائمة");
+        refreshButton.setText("↻  مزامنة");
+        refreshButton.setTextSize(13);
+        refreshButton.setTextColor(Color.WHITE);
+        refreshButton.setAllCaps(false);
         refreshButton.setFocusable(true);
+        refreshButton.setBackground(roundRect(Color.rgb(20, 59, 91), 22, Color.rgb(74, 154, 209), 1));
         refreshButton.setOnClickListener(v -> loadCatalog(false));
+        applyFocusAnimation(refreshButton);
         LinearLayout.LayoutParams refreshLp = new LinearLayout.LayoutParams(
-                compact ? LinearLayout.LayoutParams.MATCH_PARENT : LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT);
-        if (compact) refreshLp.topMargin = dp(10);
-        header.addView(refreshButton, refreshLp);
+                LinearLayout.LayoutParams.WRAP_CONTENT, dp(46));
+        refreshLp.setMarginStart(dp(10));
+        actions.addView(refreshButton, refreshLp);
+        top.addView(actions);
 
-        status = new TextView(this);
-        status.setText("جاري تحميل التطبيقات…");
-        status.setTextSize(15);
-        status.setTextColor(Color.rgb(170, 195, 218));
-        status.setPadding(0, dp(12), 0, dp(14));
+        hubUpdateBanner = new LinearLayout(this);
+        hubUpdateBanner.setOrientation(wide ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL);
+        hubUpdateBanner.setGravity(wide ? Gravity.CENTER_VERTICAL : Gravity.START);
+        hubUpdateBanner.setPadding(dp(18), dp(14), dp(18), dp(14));
+        hubUpdateBanner.setBackground(roundRect(Color.rgb(18, 71, 109), 18, Color.rgb(83, 194, 255), 1));
+        hubUpdateBanner.setVisibility(View.GONE);
 
-        content = new LinearLayout(this);
-        content.setOrientation(LinearLayout.VERTICAL);
+        hubUpdateText = text("", wide ? 16 : 14, Color.WHITE, true);
+        hubUpdateBanner.addView(hubUpdateText, new LinearLayout.LayoutParams(
+                wide ? 0 : LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                wide ? 1f : 0f));
 
-        ScrollView scroll = new ScrollView(this);
-        scroll.setFillViewport(true);
-        scroll.addView(content);
+        hubUpdateButton = new Button(this);
+        hubUpdateButton.setText("تحديث Zoryvo");
+        hubUpdateButton.setTextColor(Color.rgb(5, 21, 34));
+        hubUpdateButton.setTextSize(13);
+        hubUpdateButton.setTypeface(hubUpdateButton.getTypeface(), Typeface.BOLD);
+        hubUpdateButton.setAllCaps(false);
+        hubUpdateButton.setFocusable(true);
+        hubUpdateButton.setBackground(roundRect(Color.rgb(102, 211, 255), 20, Color.TRANSPARENT, 0));
+        applyFocusAnimation(hubUpdateButton);
+        LinearLayout.LayoutParams updateButtonLp = new LinearLayout.LayoutParams(
+                wide ? LinearLayout.LayoutParams.WRAP_CONTENT : LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(46));
+        if (wide) updateButtonLp.setMarginStart(dp(14)); else updateButtonLp.topMargin = dp(10);
+        hubUpdateBanner.addView(hubUpdateButton, updateButtonLp);
 
-        root.addView(header);
-        root.addView(status);
-        root.addView(scroll, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
+        LinearLayout sectionHead = new LinearLayout(this);
+        sectionHead.setOrientation(LinearLayout.HORIZONTAL);
+        sectionHead.setGravity(Gravity.CENTER_VERTICAL);
+
+        TextView sectionTitle = text("التطبيقات", wide ? 24 : 21, Color.WHITE, true);
+        sectionHead.addView(sectionTitle, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+
+        status = text("جاري جلب الكتالوج…", 13, Color.rgb(132, 161, 190), false);
+        sectionHead.addView(status);
+
+        apps = new LinearLayout(this);
+        apps.setOrientation(wide ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL);
+        apps.setGravity(Gravity.START);
+
+        root.addView(top);
+
+        LinearLayout.LayoutParams bannerLp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        bannerLp.topMargin = dp(18);
+        root.addView(hubUpdateBanner, bannerLp);
+
+        LinearLayout.LayoutParams sectionLp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        sectionLp.topMargin = dp(wide ? 28 : 22);
+        sectionLp.bottomMargin = dp(12);
+        root.addView(sectionHead, sectionLp);
+
+        if (wide) {
+            HorizontalScrollView scroll = new HorizontalScrollView(this);
+            scroll.setHorizontalScrollBarEnabled(false);
+            scroll.setClipToPadding(false);
+            scroll.addView(apps, new ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+            root.addView(scroll, new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
+        } else {
+            ScrollView scroll = new ScrollView(this);
+            scroll.setVerticalScrollBarEnabled(false);
+            scroll.setFillViewport(true);
+            scroll.addView(apps);
+            root.addView(scroll, new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
+        }
+
         setContentView(root);
     }
 
     private void loadCatalog(boolean silent) {
-        if (!silent) status.setText("جاري مزامنة الكتالوج…");
+        if (!silent) status.setText("جاري المزامنة…");
         refreshButton.setEnabled(false);
 
         new Thread(() -> {
             try {
-                HttpURLConnection connection = openConnection(BuildConfig.CATALOG_URL, 20000);
-                String text;
-                try (java.io.BufferedReader reader =
-                             new java.io.BufferedReader(new java.io.InputStreamReader(connection.getInputStream()))) {
-                    StringBuilder out = new StringBuilder();
-                    String line;
-                    while ((line = reader.readLine()) != null) out.append(line);
-                    text = out.toString();
-                } finally {
-                    connection.disconnect();
-                }
-
-                JSONArray apps = new JSONArray(text);
-                runOnUiThread(() -> {
-                    content.removeAllViews();
-                    int visibleCount = 0;
-                    Button firstAction = null;
-                    for (int i = 0; i < apps.length(); i++) {
-                        JSONObject o = apps.optJSONObject(i);
-                        if (o == null || !o.optBoolean("enabled", true)) continue;
-                        Button action = addAppCard(AppItem.from(o));
-                        if (firstAction == null) firstAction = action;
-                        visibleCount++;
-                    }
-                    status.setText(visibleCount + " تطبيقات • تمت المزامنة الآن");
-                    refreshButton.setEnabled(true);
-                    if (!compact && firstAction != null) firstAction.requestFocus();
-                });
+                List<AppItem> catalog = CatalogClient.fetch(BuildConfig.CATALOG_URL, BuildConfig.VERSION_NAME);
+                runOnUiThread(() -> renderCatalog(catalog));
             } catch (Exception e) {
                 runOnUiThread(() -> {
-                    status.setText("تعذر تحميل القائمة • تحقق من الاتصال ثم أعد المحاولة");
                     refreshButton.setEnabled(true);
+                    status.setText("تعذر الاتصال • أعد المحاولة");
                     if (!silent) toast(e.getMessage() == null ? "خطأ شبكة" : e.getMessage());
                 });
             }
         }).start();
     }
 
-    private Button addAppCard(AppItem app) {
-        Long installed = installedVersion(app.packageName);
-        String state;
-        if (installed == null) state = "غير مثبت • " + app.versionName;
-        else if (installed < app.versionCode) state = "تحديث متاح • " + app.versionName;
-        else state = "مثبت • " + app.versionName;
+    private void renderCatalog(List<AppItem> catalog) {
+        apps.removeAllViews();
+        refreshButton.setEnabled(true);
 
-        LinearLayout card = new LinearLayout(this);
-        card.setOrientation(compact ? LinearLayout.VERTICAL : LinearLayout.HORIZONTAL);
-        card.setGravity(compact ? Gravity.START : Gravity.CENTER_VERTICAL);
-        card.setPadding(dp(20), dp(16), dp(20), dp(16));
+        AppItem hub = null;
+        int count = 0;
+        AppCardView first = null;
 
-        GradientDrawable bg = new GradientDrawable();
-        bg.setCornerRadius(dp(16));
-        bg.setColor(Color.rgb(18, 34, 55));
-        bg.setStroke(dp(1), Color.rgb(45, 72, 98));
-        card.setBackground(bg);
+        for (AppItem item : catalog) {
+            if (!item.enabled) continue;
+            if (item.isHub(getPackageName())) {
+                hub = item;
+                continue;
+            }
 
-        LinearLayout textBox = new LinearLayout(this);
-        textBox.setOrientation(LinearLayout.VERTICAL);
+            Long installed = installedVersion(item.packageName);
+            String state;
+            String action;
+            if (installed == null) {
+                state = "غير مثبت";
+                action = "تثبيت";
+            } else if (installed < item.versionCode) {
+                state = "تحديث متاح";
+                action = "تحديث";
+            } else {
+                state = "مثبت";
+                action = "فتح";
+            }
 
-        TextView name = new TextView(this);
-        name.setText(app.name);
-        name.setTextSize(compact ? 20 : 22);
-        name.setTextColor(Color.WHITE);
-        name.setTypeface(name.getTypeface(), Typeface.BOLD);
+            AppCardView card = new AppCardView(
+                    this, item, state, action, wide,
+                    () -> {
+                        if (installed != null && installed >= item.versionCode) openApp(item.packageName);
+                        else downloadAndInstall(item);
+                    });
 
-        LinearLayout badges = new LinearLayout(this);
-        badges.setOrientation(LinearLayout.HORIZONTAL);
-        badges.setGravity(Gravity.START);
-        badges.setPadding(0, dp(7), 0, dp(5));
-
-        for (String formFactor : app.formFactors) {
-            TextView badge = new TextView(this);
-            badge.setText(formFactorLabel(formFactor));
-            badge.setTextSize(11);
-            badge.setTextColor(Color.WHITE);
-            badge.setGravity(Gravity.CENTER);
-            badge.setPadding(dp(9), dp(4), dp(9), dp(4));
-
-            GradientDrawable badgeBackground = new GradientDrawable();
-            badgeBackground.setCornerRadius(dp(20));
-            badgeBackground.setColor(Color.rgb(28, 72, 111));
-            badgeBackground.setStroke(dp(1), Color.rgb(63, 139, 194));
-            badge.setBackground(badgeBackground);
-
-            LinearLayout.LayoutParams badgeLp = new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT);
-            badgeLp.setMarginEnd(dp(6));
-            badges.addView(badge, badgeLp);
+            LinearLayout.LayoutParams lp;
+            if (wide) {
+                lp = new LinearLayout.LayoutParams(dp(330), LinearLayout.LayoutParams.WRAP_CONTENT);
+                lp.setMarginEnd(dp(18));
+            } else {
+                lp = new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+                lp.bottomMargin = dp(14);
+            }
+            apps.addView(card, lp);
+            if (first == null) first = card;
+            count++;
         }
 
-        TextView meta = new TextView(this);
-        meta.setText(app.notes.isEmpty() ? state : state + "\n" + app.notes);
-        meta.setTextSize(14);
-        meta.setTextColor(Color.rgb(175, 198, 220));
+        status.setText(count + " تطبيقات • تمت المزامنة الآن");
+        renderHubUpdate(hub);
 
-        textBox.addView(name);
-        if (!app.formFactors.isEmpty()) textBox.addView(badges);
-        textBox.addView(meta);
-        card.addView(textBox, new LinearLayout.LayoutParams(
-                compact ? LinearLayout.LayoutParams.MATCH_PARENT : 0,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                compact ? 0f : 1f));
-
-        Button button = new Button(this);
-        button.setFocusable(true);
-        if (installed == null) button.setText("تثبيت");
-        else if (installed < app.versionCode) button.setText("تحديث");
-        else button.setText("فتح");
-
-        button.setOnClickListener(v -> {
-            if (installed != null && installed >= app.versionCode) openApp(app.packageName);
-            else downloadAndInstall(app);
-        });
-
-        LinearLayout.LayoutParams buttonLp = new LinearLayout.LayoutParams(
-                compact ? LinearLayout.LayoutParams.MATCH_PARENT : LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT);
-        if (compact) buttonLp.topMargin = dp(12);
-        card.addView(button, buttonLp);
-
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        lp.bottomMargin = dp(12);
-        content.addView(card, lp);
-        return button;
+        if (wide && first != null) first.requestFocus();
     }
 
-    private String formFactorLabel(String value) {
-        if ("tv".equalsIgnoreCase(value)) return "TV";
-        if ("phone".equalsIgnoreCase(value)) return "Phone";
-        if ("tablet".equalsIgnoreCase(value)) return "Tablet";
-        return value;
+    private void renderHubUpdate(AppItem hub) {
+        if (hub != null && hub.versionCode > BuildConfig.VERSION_CODE) {
+            hubUpdateBanner.setVisibility(View.VISIBLE);
+            hubUpdateText.setText("إصدار جديد من Zoryvo متاح  •  " + hub.versionName);
+            hubUpdateButton.setOnClickListener(v -> downloadAndInstall(hub));
+        } else {
+            hubUpdateBanner.setVisibility(View.GONE);
+        }
     }
 
     private Long installedVersion(String packageName) {
@@ -273,7 +300,7 @@ public class MainActivity extends Activity {
 
     private void downloadAndInstall(AppItem app) {
         if (Build.VERSION.SDK_INT >= 26 && !getPackageManager().canRequestPackageInstalls()) {
-            toast("اسمح لـ Zoryvo بتثبيت التطبيقات، ثم أعد الضغط على التثبيت");
+            toast("اسمح لـ Zoryvo بتثبيت التطبيقات ثم أعد المحاولة");
             startActivity(new Intent(
                     Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
                     Uri.parse("package:" + getPackageName())));
@@ -283,20 +310,28 @@ public class MainActivity extends Activity {
         Dialog dialog = new Dialog(this);
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
-        box.setGravity(Gravity.CENTER);
-        box.setPadding(dp(40), dp(30), dp(40), dp(30));
-        box.setBackgroundColor(Color.rgb(18, 34, 55));
-        box.addView(new ProgressBar(this));
+        box.setPadding(dp(24), dp(22), dp(24), dp(22));
+        box.setBackground(roundRect(Color.rgb(15, 31, 51), 22, Color.rgb(55, 92, 126), 1));
 
-        TextView downloading = new TextView(this);
-        downloading.setText("جاري تنزيل " + app.name + "…");
-        downloading.setTextColor(Color.WHITE);
-        downloading.setTextSize(16);
-        downloading.setPadding(0, dp(12), 0, 0);
-        box.addView(downloading);
+        TextView title = text("تنزيل " + app.name, 18, Color.WHITE, true);
+        TextView detail = text("جاري التحضير…", 13, Color.rgb(162, 189, 214), false);
+        detail.setPadding(0, dp(8), 0, dp(12));
+
+        ProgressBar progress = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
+        progress.setMax(100);
+        progress.setProgress(0);
+
+        box.addView(title);
+        box.addView(detail);
+        box.addView(progress, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(8)));
 
         dialog.setContentView(box);
         dialog.setCancelable(false);
+        if (dialog.getWindow() != null) {
+            dialog.getWindow().setBackgroundDrawableResource(android.R.color.transparent);
+            dialog.getWindow().setLayout(wide ? dp(520) : ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        }
         dialog.show();
 
         new Thread(() -> {
@@ -305,16 +340,34 @@ public class MainActivity extends Activity {
                 if (!dir.exists() && !dir.mkdirs()) throw new IllegalStateException("تعذر إنشاء مجلد التنزيل");
                 File file = new File(dir, app.id + "-" + app.versionCode + ".apk");
 
-                HttpURLConnection connection = openConnection(app.apkUrl, 120000);
+                HttpURLConnection connection = openConnection(app.apkUrl, 120_000);
+                long total = connection.getContentLengthLong();
+                int[] lastPercent = {-1};
+
                 try (java.io.InputStream input = connection.getInputStream();
                      java.io.FileOutputStream output = new java.io.FileOutputStream(file)) {
                     byte[] buffer = new byte[32768];
-                    int count;
-                    while ((count = input.read(buffer)) >= 0) output.write(buffer, 0, count);
+                    int read;
+                    long done = 0;
+                    while ((read = input.read(buffer)) >= 0) {
+                        output.write(buffer, 0, read);
+                        done += read;
+                        if (total > 0) {
+                            int pct = (int) Math.min(100, done * 100 / total);
+                            if (pct != lastPercent[0]) {
+                                lastPercent[0] = pct;
+                                runOnUiThread(() -> {
+                                    progress.setProgress(pct);
+                                    detail.setText("جاري التنزيل  •  " + pct + "%");
+                                });
+                            }
+                        }
+                    }
                 } finally {
                     connection.disconnect();
                 }
 
+                runOnUiThread(() -> detail.setText("جاري التحقق من الملف…"));
                 verifyDownloadedApk(app, file);
 
                 runOnUiThread(() -> {
@@ -326,10 +379,6 @@ public class MainActivity extends Activity {
                     try {
                         startActivity(intent);
                     } catch (Exception installError) {
-                        if (Build.VERSION.SDK_INT < 26) {
-                            try { startActivity(new Intent(Settings.ACTION_SECURITY_SETTINGS)); }
-                            catch (Exception ignored) { }
-                        }
                         toast("تعذر فتح مثبت Android");
                     }
                 });
@@ -349,7 +398,7 @@ public class MainActivity extends Activity {
         if (archive == null || archive.packageName == null)
             throw new IllegalStateException("تعذر قراءة هوية APK");
         if (!app.packageName.equals(archive.packageName))
-            throw new IllegalStateException("هوية APK لا تطابق التطبيق المطلوب");
+            throw new IllegalStateException("هوية APK لا تطابق التطبيق");
 
         long archiveVersion = Build.VERSION.SDK_INT >= 28
                 ? archive.getLongVersionCode()
@@ -376,7 +425,7 @@ public class MainActivity extends Activity {
     private HttpURLConnection openConnection(String url, int readTimeoutMs) throws Exception {
         HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
         c.setInstanceFollowRedirects(true);
-        c.setConnectTimeout(15000);
+        c.setConnectTimeout(15_000);
         c.setReadTimeout(readTimeoutMs);
         c.setRequestProperty("Cache-Control", "no-cache");
         c.setRequestProperty("User-Agent", "Zoryvo-App-Hub/" + BuildConfig.VERSION_NAME);
@@ -386,55 +435,36 @@ public class MainActivity extends Activity {
         return c;
     }
 
+    private TextView text(String value, int size, int color, boolean bold) {
+        TextView view = new TextView(this);
+        view.setText(value);
+        view.setTextSize(size);
+        view.setTextColor(color);
+        if (bold) view.setTypeface(view.getTypeface(), Typeface.BOLD);
+        return view;
+    }
+
+    private GradientDrawable roundRect(int fill, int radiusDp, int stroke, int strokeDp) {
+        GradientDrawable drawable = new GradientDrawable();
+        drawable.setColor(fill);
+        drawable.setCornerRadius(dp(radiusDp));
+        if (strokeDp > 0) drawable.setStroke(dp(strokeDp), stroke);
+        return drawable;
+    }
+
+    private void applyFocusAnimation(View view) {
+        view.setOnFocusChangeListener((v, focused) -> v.animate()
+                .scaleX(focused ? 1.06f : 1f)
+                .scaleY(focused ? 1.06f : 1f)
+                .setDuration(150)
+                .start());
+    }
+
     private void toast(String message) {
         Toast.makeText(this, message, Toast.LENGTH_LONG).show();
     }
 
     private int dp(int value) {
         return (int) (value * getResources().getDisplayMetrics().density);
-    }
-
-    static class AppItem {
-        final String id, name, packageName, versionName, apkUrl, notes, sha256;
-        final long versionCode;
-        final List<String> formFactors;
-
-        AppItem(String id, String name, String packageName, long versionCode,
-                String versionName, String apkUrl, String notes, String sha256,
-                List<String> formFactors) {
-            this.id = id;
-            this.name = name;
-            this.packageName = packageName;
-            this.versionCode = versionCode;
-            this.versionName = versionName;
-            this.apkUrl = apkUrl;
-            this.notes = notes;
-            this.sha256 = sha256;
-            this.formFactors = formFactors;
-        }
-
-        static AppItem from(JSONObject o) {
-            long code = o.optLong("versionCode", 1);
-            List<String> formFactors = new ArrayList<>();
-            JSONArray values = o.optJSONArray("formFactors");
-            if (values != null) {
-                for (int i = 0; i < values.length(); i++) {
-                    String value = values.optString(i, "").trim();
-                    if (!value.isEmpty()) formFactors.add(value);
-                }
-            }
-
-            return new AppItem(
-                    o.optString("id"),
-                    o.optString("name"),
-                    o.optString("packageName"),
-                    code,
-                    o.optString("versionName", Long.toString(code)),
-                    o.optString("apkUrl"),
-                    o.optString("notes", ""),
-                    o.optString("sha256", ""),
-                    formFactors
-            );
-        }
     }
 }

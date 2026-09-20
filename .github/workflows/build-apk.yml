@@ -43,13 +43,13 @@ jobs:
         run: |
           set -euo pipefail
           grep -q 'minSdk = 21' app/build.gradle.kts
-          grep -q 'versionCode = 3' app/build.gradle.kts
-          grep -q 'android.software.leanback.*required="false"' app/src/main/AndroidManifest.xml
-          grep -q 'android.hardware.touchscreen.*required="false"' app/src/main/AndroidManifest.xml
+          grep -q 'versionCode = 4' app/build.gradle.kts
           grep -q 'android.intent.category.LAUNCHER' app/src/main/AndroidManifest.xml
           grep -q 'android.intent.category.LEANBACK_LAUNCHER' app/src/main/AndroidManifest.xml
           test -s app/src/main/res/drawable/zoryvo_icon.xml
           test -s app/src/main/res/drawable/zoryvo_tv_banner.xml
+          test -s app/src/main/res/drawable/selyro_tv_icon.xml
+          test -s app/src/main/res/drawable/bubble_safari_icon.xml
 
       - name: Build APK
         run: gradle :app:assembleDebug --stacktrace
@@ -67,7 +67,7 @@ jobs:
         run: |
           set -euo pipefail
           $ANDROID_HOME/build-tools/36.0.0/aapt dump badging /tmp/Zoryvo.apk | tee /tmp/badging.txt
-          grep -q "package: name='com.zoryvo.hub' versionCode='3'" /tmp/badging.txt
+          grep -q "package: name='com.zoryvo.hub' versionCode='4'" /tmp/badging.txt
           grep -q "sdkVersion:'21'" /tmp/badging.txt
           grep -q "application-label:'Zoryvo'" /tmp/badging.txt
           grep -q "launchable-activity: name='com.zoryvo.hub.MainActivity'" /tmp/badging.txt
@@ -87,7 +87,7 @@ jobs:
           TAG=hub-latest
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" /tmp/Zoryvo.apk --clobber
-            gh release edit "$TAG" --title "Zoryvo" --notes "Temporary Android app hub — Android 5.0+, phone/tablet/TV." --latest
+            gh release edit "$TAG" --title "Zoryvo" --notes "Zoryvo 0.4.0 — redesigned app cards, app artwork, TV focus motion, and self-update." --latest
           else
-            gh release create "$TAG" /tmp/Zoryvo.apk               --title "Zoryvo"               --notes "Temporary Android app hub — Android 5.0+, phone/tablet/TV."               --latest
+            gh release create "$TAG" /tmp/Zoryvo.apk               --title "Zoryvo"               --notes "Zoryvo 0.4.0 — redesigned app cards, app artwork, TV focus motion, and self-update."               --latest
           fi
