@@ -1,0 +1,32 @@
+[
+  {
+    "id": "selyro-tv",
+    "name": "Selyro TV",
+    "packageName": "com.selyro.tv",
+    "versionCode": 18,
+    "versionName": "0.3.8",
+    "apkUrl": "https://github.com/aseel90/zoryvo-app-hub/releases/download/apps-current/Selyro-TV.apk",
+    "notes": "IPTV • Android TV",
+    "enabled": true
+  },
+  {
+    "id": "bubble-safari-tv",
+    "name": "Bubble Safari TV",
+    "packageName": "com.bubblesafari.tv",
+    "versionCode": 5,
+    "versionName": "0.9.2-tv5",
+    "apkUrl": "https://github.com/aseel90/zoryvo-app-hub/releases/download/apps-current/Bubble-Safari-TV.apk",
+    "notes": "لعبة تعليمية للأطفال • Android TV",
+    "enabled": true
+  },
+  {
+    "id": "feather-fury",
+    "name": "Feather Fury",
+    "packageName": "com.aseel.featherfury",
+    "versionCode": 1,
+    "versionName": "Android RC",
+    "apkUrl": "https://github.com/aseel90/zoryvo-app-hub/releases/download/apps-current/Feather-Fury.apk",
+    "notes": "لعبة • Android",
+    "enabled": true
+  }
+]
