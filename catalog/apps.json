@@ -5,7 +5,11 @@
     "packageName": "com.selyro.tv",
     "versionCode": 18,
     "versionName": "0.3.8",
+    "assetName": "Selyro-TV.apk",
     "apkUrl": "https://github.com/aseel90/zoryvo-app-hub/releases/download/apps-current/Selyro-TV.apk",
+    "sha256": "5a3e429bf2b34f6b5c57e001bb13f88f6856f34f148593c5712a7a9bb02eb390",
+    "sourceRepo": "aseel90/iptv",
+    "formFactors": ["tv"],
     "notes": "IPTV • Android TV",
     "enabled": true
   },
@@ -15,7 +19,11 @@
     "packageName": "com.bubblesafari.tv",
     "versionCode": 5,
     "versionName": "0.9.2-tv5",
+    "assetName": "Bubble-Safari-TV.apk",
     "apkUrl": "https://github.com/aseel90/zoryvo-app-hub/releases/download/apps-current/Bubble-Safari-TV.apk",
+    "sha256": "a8c601c2f54ea37f614adf7039f7580b8c5669e552419481ce71f17c62790e28",
+    "sourceRepo": "aseel90/bubble-safari-tv",
+    "formFactors": ["tv"],
     "notes": "لعبة تعليمية للأطفال • Android TV",
     "enabled": true
   },
@@ -25,7 +33,11 @@
     "packageName": "com.aseel.featherfury",
     "versionCode": 1,
     "versionName": "Android RC",
+    "assetName": "Feather-Fury.apk",
     "apkUrl": "https://github.com/aseel90/zoryvo-app-hub/releases/download/apps-current/Feather-Fury.apk",
+    "sha256": "d4b75bf541aaa91d4d1528c83cebbf91f9896cbd685585b8731f9b6e2dc5e00c",
+    "sourceRepo": "aseel90/FeatherFury-LaB",
+    "formFactors": ["phone", "tablet"],
     "notes": "لعبة • Android",
     "enabled": true
   }

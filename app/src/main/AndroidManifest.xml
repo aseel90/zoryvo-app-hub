@@ -2,25 +2,35 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
-    <!-- Temporary sideload catalog. Remove QUERY_ALL_PACKAGES before any Play Store release. -->
+    <!-- Temporary sideload catalog: needed to compare dynamically-added catalog apps. -->
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
 
+    <!-- Zoryvo must install on phones/tablets as well as Android/Google TV. -->
     <uses-feature android:name="android.software.leanback" android:required="false" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
 
     <application
         android:allowBackup="false"
+        android:banner="@drawable/zoryvo_tv_banner"
+        android:hardwareAccelerated="true"
+        android:icon="@drawable/zoryvo_icon"
+        android:roundIcon="@drawable/zoryvo_icon"
         android:label="Zoryvo"
+        android:supportsRtl="true"
         android:theme="@style/Theme.ZoryvoHub"
         android:usesCleartextTraffic="false">
 
         <activity
             android:name=".MainActivity"
-            android:screenOrientation="landscape"
-            android:exported="true">
+            android:banner="@drawable/zoryvo_tv_banner"
+            android:exported="true"
+            android:resizeableActivity="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
         </activity>
