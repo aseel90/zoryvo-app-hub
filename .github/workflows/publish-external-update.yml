@@ -1,0 +1,189 @@
+name: Publish External App Update
+
+on:
+  workflow_dispatch:
+    inputs:
+      app_id:
+        description: Catalog app id
+        required: true
+        type: choice
+        options:
+          - selyro-tv
+          - bubble-safari-tv
+          - feather-fury
+      apk_url:
+        description: Direct URL to the verified source APK
+        required: true
+        type: string
+      notes:
+        description: Optional release notes shown in Zoryvo
+        required: false
+        type: string
+  repository_dispatch:
+    types: [zoryvo-external-update]
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      APP_ID: ${{ github.event_name == 'workflow_dispatch' && inputs.app_id || github.event.client_payload.app_id }}
+      APK_URL: ${{ github.event_name == 'workflow_dispatch' && inputs.apk_url || github.event.client_payload.apk_url }}
+      RELEASE_NOTES: ${{ github.event_name == 'workflow_dispatch' && inputs.notes || github.event.client_payload.notes }}
+      SOURCE_TOKEN: ${{ secrets.ZORYVO_SOURCE_TOKEN }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: ''
+
+      - name: Install APK inspection tools
+        run: sdkmanager 'build-tools;36.0.0'
+
+      - name: Resolve catalog contract
+        id: contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os
+          app_id = os.environ["APP_ID"]
+          apps = json.load(open("catalog/apps.json", encoding="utf-8"))
+          item = next((x for x in apps if x["id"] == app_id), None)
+          if not item:
+              raise SystemExit(f"Unknown app id: {app_id}")
+          required = ["packageName", "assetName", "apkUrl", "versionCode"]
+          missing = [k for k in required if not item.get(k)]
+          if missing:
+              raise SystemExit(f"Catalog entry missing: {missing}")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
+              f.write(f"package_name={item['packageName']}\n")
+              f.write(f"asset_name={item['assetName']}\n")
+              f.write(f"current_url={item['apkUrl']}\n")
+              f.write(f"current_version={item['versionCode']}\n")
+          PY
+
+      - name: Download candidate APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$APK_URL"
+          mkdir -p dist
+          if [ -n "${SOURCE_TOKEN:-}" ]; then
+            curl -fL --retry 3               -H "Authorization: Bearer $SOURCE_TOKEN"               -H "Accept: application/octet-stream"               "$APK_URL" -o dist/candidate.apk
+          else
+            curl -fL --retry 3 "$APK_URL" -o dist/candidate.apk
+          fi
+          test -s dist/candidate.apk
+
+      - name: Verify identity, version and signer continuity
+        id: verify
+        shell: bash
+        env:
+          EXPECTED_PACKAGE: ${{ steps.contract.outputs.package_name }}
+          CURRENT_URL: ${{ steps.contract.outputs.current_url }}
+          CURRENT_VERSION: ${{ steps.contract.outputs.current_version }}
+        run: |
+          set -euo pipefail
+          AAPT="$ANDROID_HOME/build-tools/36.0.0/aapt"
+          APKSIGNER="$ANDROID_HOME/build-tools/36.0.0/apksigner"
+
+          "$AAPT" dump badging dist/candidate.apk | tee dist/candidate.badging
+          PACKAGE_NAME="$(sed -n "s/^package: name='\([^']*\)'.*/\1/p" dist/candidate.badging)"
+          VERSION_CODE="$(sed -n "s/^package:.*versionCode='\([^']*\)'.*/\1/p" dist/candidate.badging)"
+          VERSION_NAME="$(sed -n "s/^package:.*versionName='\([^']*\)'.*/\1/p" dist/candidate.badging)"
+
+          test "$PACKAGE_NAME" = "$EXPECTED_PACKAGE"
+          test "$VERSION_CODE" -gt "$CURRENT_VERSION"
+
+          "$APKSIGNER" verify --print-certs dist/candidate.apk | tee dist/candidate.cert
+          NEW_CERT="$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' dist/candidate.cert | head -1)"
+          test -n "$NEW_CERT"
+
+          curl -fL --retry 3 "$CURRENT_URL" -o dist/current.apk
+          "$APKSIGNER" verify --print-certs dist/current.apk | tee dist/current.cert
+          CURRENT_CERT="$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' dist/current.cert | head -1)"
+          test -n "$CURRENT_CERT"
+
+          if [ "$NEW_CERT" != "$CURRENT_CERT" ]; then
+            echo "::error::Signer mismatch. Android cannot install this APK as an update over the current Zoryvo asset."
+            echo "Current: $CURRENT_CERT"
+            echo "New:     $NEW_CERT"
+            exit 1
+          fi
+
+          SHA256="$(sha256sum dist/candidate.apk | awk '{print $1}')"
+          {
+            echo "version_code=$VERSION_CODE"
+            echo "version_name=$VERSION_NAME"
+            echo "sha256=$SHA256"
+            echo "signer_sha256=$NEW_CERT"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Publish central APK asset
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ASSET_NAME: ${{ steps.contract.outputs.asset_name }}
+        run: |
+          set -euo pipefail
+          cp dist/candidate.apk "dist/$ASSET_NAME"
+          printf '%s  %s\n' "${{ steps.verify.outputs.sha256 }}" "$ASSET_NAME" > "dist/$ASSET_NAME.sha256"
+
+          if gh release view apps-current >/dev/null 2>&1; then
+            gh release upload apps-current "dist/$ASSET_NAME" "dist/$ASSET_NAME.sha256" --clobber
+          else
+            gh release create apps-current "dist/$ASSET_NAME" "dist/$ASSET_NAME.sha256"               --title "Zoryvo Apps — Current APKs"               --notes "Public APK distribution assets used by the Zoryvo catalog."
+          fi
+
+      - name: Update Zoryvo catalog
+        shell: bash
+        env:
+          VERSION_CODE: ${{ steps.verify.outputs.version_code }}
+          VERSION_NAME: ${{ steps.verify.outputs.version_name }}
+          SHA256: ${{ steps.verify.outputs.sha256 }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import datetime, json, os
+          path = "catalog/apps.json"
+          apps = json.load(open(path, encoding="utf-8"))
+          app_id = os.environ["APP_ID"]
+          notes = os.environ.get("RELEASE_NOTES", "").strip()
+          found = False
+          for item in apps:
+              if item["id"] != app_id:
+                  continue
+              item["versionCode"] = int(os.environ["VERSION_CODE"])
+              item["versionName"] = os.environ["VERSION_NAME"]
+              item["sha256"] = os.environ["SHA256"]
+              item["updatedAt"] = datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0).isoformat()
+              if notes:
+                  item["notes"] = notes
+              found = True
+              break
+          if not found:
+              raise SystemExit(f"Unknown app id: {app_id}")
+          with open(path, "w", encoding="utf-8") as f:
+              json.dump(apps, f, ensure_ascii=False, indent=2)
+              f.write("\n")
+          PY
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add catalog/apps.json
+          git commit -m "Publish $APP_ID external update" || exit 0
+          git push
+
+      - name: Final summary
+        run: |
+          echo "Published $APP_ID"
+          echo "Version: ${{ steps.verify.outputs.version_name }} (${{ steps.verify.outputs.version_code }})"
+          echo "Signer:  ${{ steps.verify.outputs.signer_sha256 }}"
+          echo "SHA-256: ${{ steps.verify.outputs.sha256 }}"

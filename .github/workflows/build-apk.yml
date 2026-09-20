@@ -39,6 +39,18 @@ jobs:
         with:
           gradle-version: '8.13'
 
+      - name: Verify compatibility contract
+        run: |
+          set -euo pipefail
+          grep -q 'minSdk = 21' app/build.gradle.kts
+          grep -q 'versionCode = 2' app/build.gradle.kts
+          grep -q 'android.software.leanback.*required="false"' app/src/main/AndroidManifest.xml
+          grep -q 'android.hardware.touchscreen.*required="false"' app/src/main/AndroidManifest.xml
+          grep -q 'android.intent.category.LAUNCHER' app/src/main/AndroidManifest.xml
+          grep -q 'android.intent.category.LEANBACK_LAUNCHER' app/src/main/AndroidManifest.xml
+          test -s app/src/main/res/drawable/zoryvo_icon.xml
+          test -s app/src/main/res/drawable/zoryvo_tv_banner.xml
+
       - name: Build APK
         run: gradle :app:assembleDebug --stacktrace
 
@@ -48,19 +60,18 @@ jobs:
           curl -fsSL https://raw.githubusercontent.com/aosp-mirror/platform_build/main/target/product/security/testkey.pk8 -o /tmp/zoryvo-testkey.pk8
           curl -fsSL https://raw.githubusercontent.com/aosp-mirror/platform_build/main/target/product/security/testkey.x509.pem -o /tmp/zoryvo-testkey.x509.pem
           APK=app/build/outputs/apk/debug/app-debug.apk
-          $ANDROID_HOME/build-tools/36.0.0/apksigner sign \
-            --key /tmp/zoryvo-testkey.pk8 \
-            --cert /tmp/zoryvo-testkey.x509.pem \
-            --out /tmp/Zoryvo.apk \
-            "$APK"
+          $ANDROID_HOME/build-tools/36.0.0/apksigner sign             --key /tmp/zoryvo-testkey.pk8             --cert /tmp/zoryvo-testkey.x509.pem             --out /tmp/Zoryvo.apk             "$APK"
           $ANDROID_HOME/build-tools/36.0.0/apksigner verify --print-certs /tmp/Zoryvo.apk
 
-      - name: Verify APK identity
+      - name: Verify APK identity and launch modes
         run: |
           set -euo pipefail
           $ANDROID_HOME/build-tools/36.0.0/aapt dump badging /tmp/Zoryvo.apk | tee /tmp/badging.txt
-          grep -q "package: name='com.zoryvo.hub' versionCode='1'" /tmp/badging.txt
+          grep -q "package: name='com.zoryvo.hub' versionCode='2'" /tmp/badging.txt
+          grep -q "sdkVersion:'21'" /tmp/badging.txt
           grep -q "application-label:'Zoryvo'" /tmp/badging.txt
+          grep -q "launchable-activity: name='com.zoryvo.hub.MainActivity'" /tmp/badging.txt
+          grep -q "leanback-launchable-activity: name='com.zoryvo.hub.MainActivity'" /tmp/badging.txt
 
       - uses: actions/upload-artifact@v4
         with:
@@ -76,10 +87,7 @@ jobs:
           TAG=hub-latest
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" /tmp/Zoryvo.apk --clobber
-            gh release edit "$TAG" --title "Zoryvo" --notes "Temporary Android app hub." --latest
+            gh release edit "$TAG" --title "Zoryvo" --notes "Temporary Android app hub — Android 5.0+, phone/tablet/TV." --latest
           else
-            gh release create "$TAG" /tmp/Zoryvo.apk \
-              --title "Zoryvo" \
-              --notes "Temporary Android app hub." \
-              --latest
+            gh release create "$TAG" /tmp/Zoryvo.apk               --title "Zoryvo"               --notes "Temporary Android app hub — Android 5.0+, phone/tablet/TV."               --latest
           fi
