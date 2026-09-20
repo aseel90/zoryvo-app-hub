@@ -43,7 +43,7 @@ jobs:
         run: |
           set -euo pipefail
           grep -q 'minSdk = 21' app/build.gradle.kts
-          grep -q 'versionCode = 2' app/build.gradle.kts
+          grep -q 'versionCode = 3' app/build.gradle.kts
           grep -q 'android.software.leanback.*required="false"' app/src/main/AndroidManifest.xml
           grep -q 'android.hardware.touchscreen.*required="false"' app/src/main/AndroidManifest.xml
           grep -q 'android.intent.category.LAUNCHER' app/src/main/AndroidManifest.xml
@@ -67,7 +67,7 @@ jobs:
         run: |
           set -euo pipefail
           $ANDROID_HOME/build-tools/36.0.0/aapt dump badging /tmp/Zoryvo.apk | tee /tmp/badging.txt
-          grep -q "package: name='com.zoryvo.hub' versionCode='2'" /tmp/badging.txt
+          grep -q "package: name='com.zoryvo.hub' versionCode='3'" /tmp/badging.txt
           grep -q "sdkVersion:'21'" /tmp/badging.txt
           grep -q "application-label:'Zoryvo'" /tmp/badging.txt
           grep -q "launchable-activity: name='com.zoryvo.hub.MainActivity'" /tmp/badging.txt
