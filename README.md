@@ -1,36 +1,54 @@
 # Zoryvo App Hub
 
-**Zoryvo** هو الاسم المؤقت لمركز بسيط لتوزيع تطبيقات Android وAndroid TV قبل اكتمال نشرها على Google Play.
+**Zoryvo** هو مركز مؤقت لتوزيع تطبيقات Android وAndroid TV قبل اكتمال نشرها على Google Play.
 
 ## تنزيل Zoryvo
 
-أحدث APK ثابت للمركز:
+أحدث APK ثابت:
 
 https://github.com/aseel90/zoryvo-app-hub/releases/download/hub-latest/Zoryvo.apk
 
-## الحالة الحالية
+الإصدار الحالي:
 
-- ✅ تطبيق Android / Android TV قابل للبناء والتثبيت.
-- ✅ الكتالوج منفصل في `catalog/apps.json`.
-- ✅ Selyro TV موجود في Release المركزي.
-- ✅ Bubble Safari TV موجود في Release المركزي.
-- ✅ Feather Fury موجود في Release المركزي.
-- ✅ Workflow يبني Zoryvo وينشر `Zoryvo.apk` تلقائيًا.
-- ✅ ملفات التطبيقات العامة أصبحت في هذا المستودع، ولا يحتاج الكتالوج إلى قراءة مستودعات المصدر.
+- package: `com.zoryvo.hub`
+- version: `0.2.0`
+- versionCode: `2`
+- min Android: **5.0 / API 21**
+- target SDK: **36**
 
-## كيف يعمل؟
+## الأجهزة المدعومة
 
-التطبيق يقرأ الكتالوج مباشرة من:
+Zoryvo نفسه مصمم ليعمل على:
 
-`catalog/apps.json`
+- هواتف Android
+- أجهزة Android اللوحية
+- Android TV
+- Google TV
+- TV boxes / TV sticks
 
-لذلك إضافة تطبيق جديد أو تغيير إصدار أو رابط APK لا تحتاج إصدار نسخة جديدة من تطبيق Zoryvo نفسه.
+التطبيق لا يفرض وضع landscape على الهاتف، ويستخدم تخطيطًا مضغوطًا على الشاشات الضيقة، مع دعم Launcher العادي وLeanback Launcher.
 
-الحالات التي يعرضها المركز لكل تطبيق:
+## العلامة البصرية
 
-- **تثبيت**: التطبيق غير موجود على الجهاز.
-- **تحديث**: `versionCode` الموجود في الكتالوج أكبر من الإصدار المثبت.
-- **فتح**: الإصدار المثبت مساوي أو أحدث من الموجود في الكتالوج.
+تمت إضافة:
+
+- launcher icon خاص بـ Zoryvo
+- Android TV banner
+- هوية Z باللون الأزرق/البنفسجي
+
+## قاعدة التحديثات
+
+**التحديث الخارجي** = أي تحديث يتطلب APK جديدًا أو استبدال APK المثبت. هذا النوع يمر عبر Zoryvo.
+
+**التحديث الداخلي** = بيانات/محتوى/إعدادات يستطيع التطبيق المثبت استهلاكها بدون استبدال APK. هذا النوع يبقى داخل التطبيق نفسه.
+
+التعليمات الكاملة للـAgents موجودة في:
+
+`AGENTS.md`
+
+ومراجعة المستودعات وخطة العمل موجودة في:
+
+`docs/REPOSITORY-REVIEW.md`
 
 ## التطبيقات الحالية
 
@@ -40,60 +58,47 @@ https://github.com/aseel90/zoryvo-app-hub/releases/download/hub-latest/Zoryvo.ap
 
 ## توزيع APKs
 
-ملفات APK العامة موجودة في Release ثابت باسم:
+ملفات APK العامة موجودة في Release ثابت:
 
 `apps-current`
 
-وبأسماء:
+الكتالوج:
 
-- `Selyro-TV.apk`
-- `Bubble-Safari-TV.apk`
-- `Feather-Fury.apk`
+`catalog/apps.json`
 
-الكتالوج يشير إلى هذه الملفات في **Zoryvo App Hub نفسه**، وليس إلى مستودعات المصدر. لذلك يمكن لاحقًا جعل مستودعات التطوير خاصة مع بقاء النسخ الحالية قابلة للتنزيل.
+لكل تطبيق نسجل package name وversionCode وversionName واسم asset وSHA-256 ومصدره.
 
-## إضافة تطبيق جديد
+## نشر تحديث خارجي
 
-1. ارفع APK إلى Release `apps-current`.
-2. أضف عنصرًا جديدًا إلى `catalog/apps.json`:
+Workflow باسم **Publish External App Update** يستقبل APK المرشح ثم يتحقق من:
 
-```json
-{
-  "id": "my-app",
-  "name": "My App",
-  "packageName": "com.example.myapp",
-  "versionCode": 12,
-  "versionName": "1.2.0",
-  "apkUrl": "https://github.com/aseel90/zoryvo-app-hub/releases/download/apps-current/My-App.apk",
-  "notes": "وصف قصير",
-  "enabled": true
-}
-```
+1. package name
+2. أن versionCode أعلى من النسخة الحالية
+3. أن توقيع APK يطابق توقيع النسخة الموزعة حاليًا
+4. SHA-256
 
-بعد حفظ `apps.json` سيظهر التطبيق في Zoryvo عند المزامنة التالية دون تحديث APK الخاص بـ Zoryvo.
+إذا اختلف التوقيع، يفشل النشر بدل إرسال تحديث لا يستطيع Android تثبيته فوق النسخة الحالية.
 
-## تحديث تطبيق
+بعد نجاح الفحص، يتم استبدال APK في `apps-current` وتحديث `catalog/apps.json` واحتساب SHA-256 الجديد. بعدها يظهر زر **تحديث** في Zoryvo للمستخدم الذي لديه إصدار أقدم.
 
-1. ارفع APK أحدث إلى Release `apps-current` بنفس اسم الملف.
-2. ارفع `versionCode` و`versionName` داخل `catalog/apps.json`.
-3. يقرأ Zoryvo الكتالوج الجديد، ويعرض **تحديث** عندما يكون الإصدار المثبت أقدم.
+## ملاحظة عن مستودعات المصدر
 
-> تحديث نفس التطبيق فوق النسخة المثبتة يخضع لقواعد Android المعتادة، ومنها تطابق package name والتوقيع.
+المستودعات الأصلية **تبقى Public حاليًا**. لا يتم تحويلها إلى Private إلا بطلب صريح لاحقًا.
+
+قبل جعلها Private مستقبلًا سنضيف Fine-grained token أو GitHub App يسمح لـ Zoryvo بقراءة artifacts/releases الخاصة أو استقبال dispatch مصادق عليه.
+
+## تنبيه توقيع مهم
+
+- Selyro لديه مسار QA بتوقيع ثابت حاليًا.
+- Bubble Safari يحتاج تثبيت signing identity دائم قبل أول تحديث خارجي جديد عبر Zoryvo.
+- Feather Fury يحتاج تحويل signing من cache-based debug keystore إلى signing identity دائم قبل الاعتماد على تحديثات Zoryvo المتتابعة.
+
+هذا يمنع Android من طلب حذف التطبيق القديم عند محاولة التحديث.
 
 ## بناء Zoryvo
 
-Workflow باسم **Build Zoryvo APK** يبني APK ويتحقق من هوية الحزمة ثم ينشر أحدث نسخة دائمًا في Release `hub-latest` باسم:
+Workflow باسم **Build Zoryvo APK** يبني التطبيق ويتحقق من package/version وmin SDK 21 وLauncher للهاتف/اللوحي وLeanback Launcher للتلفاز، ثم ينشر `Zoryvo.apk` إلى Release `hub-latest`.
 
-`Zoryvo.apk`
+## ملاحظة Google Play
 
-Package الخاص بالمركز:
-
-`com.zoryvo.hub`
-
-الإصدار الحالي:
-
-`0.1.0 (versionCode 1)`
-
-## ملاحظة
-
-هذا المستودع مقصود كتوزيع مؤقت خارج Google Play. طريقة sideload وصلاحيات اكتشاف التطبيقات المستخدمة هنا مخصصة لهذا الاستخدام المؤقت وليست تصميم نسخة Google Play النهائية.
+هذا المستودع مخصص حاليًا للتوزيع المؤقت خارج Google Play. صلاحية `QUERY_ALL_PACKAGES` وsideloading هنا ليست بالضرورة تصميم نسخة Play Store النهائية.
