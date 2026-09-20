@@ -328,11 +328,13 @@ public class MainActivity extends Activity {
 
         dialog.setContentView(box);
         dialog.setCancelable(false);
+        dialog.show();
         if (dialog.getWindow() != null) {
             dialog.getWindow().setBackgroundDrawableResource(android.R.color.transparent);
-            dialog.getWindow().setLayout(wide ? dp(520) : ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            dialog.getWindow().setLayout(
+                    wide ? dp(520) : ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT);
         }
-        dialog.show();
 
         new Thread(() -> {
             try {
@@ -341,7 +343,7 @@ public class MainActivity extends Activity {
                 File file = new File(dir, app.id + "-" + app.versionCode + ".apk");
 
                 HttpURLConnection connection = openConnection(app.apkUrl, 120_000);
-                long total = connection.getContentLengthLong();
+                long total = connection.getContentLength();
                 int[] lastPercent = {-1};
 
                 try (java.io.InputStream input = connection.getInputStream();
