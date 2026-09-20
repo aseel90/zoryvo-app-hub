@@ -1,0 +1,60 @@
+name: Seed Current App APKs
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/sync-current-apps.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  seed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Download current public APKs
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+
+          curl -fL --retry 3 \
+            "https://raw.githubusercontent.com/aseel90/iptv/release/0.3.8-navigation-icons/ci-artifacts/Selyro-TV-v0.3.8-navigation-icons.apk" \
+            -o dist/Selyro-TV.apk
+
+          curl -fL --retry 3 \
+            "https://github.com/aseel90/bubble-safari-tv/releases/latest/download/bubble-safari-tv.apk" \
+            -o dist/Bubble-Safari-TV.apk
+
+          curl -fL --retry 3 \
+            "https://github.com/aseel90/FeatherFury-LaB/releases/download/android-rc-share/FeatherFury-RC-debug.apk" \
+            -o dist/Feather-Fury.apk
+
+          test -s dist/Selyro-TV.apk
+          test -s dist/Bubble-Safari-TV.apk
+          test -s dist/Feather-Fury.apk
+
+          sha256sum dist/*.apk | tee dist/SHA256SUMS.txt
+          ls -lh dist
+
+      - name: Publish central app assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG=apps-current
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/*.apk dist/SHA256SUMS.txt \
+              --clobber --repo "$GITHUB_REPOSITORY"
+            gh release edit "$TAG" \
+              --title "Zoryvo Apps — Current APKs" \
+              --notes "Public APK distribution assets used by the Zoryvo catalog." \
+              --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$TAG" dist/*.apk dist/SHA256SUMS.txt \
+              --title "Zoryvo Apps — Current APKs" \
+              --notes "Public APK distribution assets used by the Zoryvo catalog." \
+              --repo "$GITHUB_REPOSITORY"
+          fi
