@@ -3,6 +3,7 @@ package com.zoryvo.hub;
 import android.app.Activity;
 import android.app.Dialog;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
 import android.graphics.Color;
 import android.graphics.Typeface;
@@ -14,8 +15,10 @@ import android.provider.Settings;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.Window;
 import android.widget.Button;
-import android.widget.HorizontalScrollView;
+import android.widget.GridLayout;
+import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
@@ -25,6 +28,7 @@ import android.widget.Toast;
 
 import androidx.core.content.FileProvider;
 
+import com.zoryvo.hub.download.ResumableDownloader;
 import com.zoryvo.hub.model.AppItem;
 import com.zoryvo.hub.network.CatalogClient;
 import com.zoryvo.hub.ui.AppCardView;
@@ -34,21 +38,34 @@ import java.io.FileInputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.security.MessageDigest;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 public class MainActivity extends Activity {
-    private LinearLayout apps;
+    private static final String PREFS = "zoryvo_preferences";
+    private static final String KEY_VIEW_MODE = "view_mode";
+    private static final String VIEW_AUTO = "auto";
+    private static final String VIEW_GRID = "grid";
+    private static final String VIEW_LIST = "list";
+
+    private ViewGroup apps;
     private TextView status;
-    private Button refreshButton;
+    private ImageButton refreshButton;
     private LinearLayout hubUpdateBanner;
     private TextView hubUpdateText;
     private Button hubUpdateButton;
-    private boolean wide;
+    private SharedPreferences preferences;
+    private AppItem currentHubItem;
+    private boolean gridMode;
+    private int gridColumns;
+    private int sidePaddingDp;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        wide = getResources().getConfiguration().screenWidthDp >= 700;
+        preferences = getSharedPreferences(PREFS, MODE_PRIVATE);
+        resolveLayoutMode();
         buildShell();
         loadCatalog(false);
     }
@@ -59,141 +76,133 @@ public class MainActivity extends Activity {
         if (apps != null && apps.getChildCount() > 0) loadCatalog(true);
     }
 
+    private void resolveLayoutMode() {
+        int width = getResources().getConfiguration().screenWidthDp;
+        String mode = preferences.getString(KEY_VIEW_MODE, VIEW_AUTO);
+        gridMode = VIEW_GRID.equals(mode) || (VIEW_AUTO.equals(mode) && width >= 600);
+
+        if (width >= 1500) gridColumns = 5;
+        else if (width >= 1150) gridColumns = 4;
+        else if (width >= 760) gridColumns = 3;
+        else if (width >= 430) gridColumns = 2;
+        else gridColumns = 2;
+
+        sidePaddingDp = width >= 1200 ? 32 : width >= 700 ? 24 : 14;
+    }
+
     private void buildShell() {
+        int width = getResources().getConfiguration().screenWidthDp;
+        boolean wideHeader = width >= 720;
+
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(Color.rgb(6, 14, 27));
-        int side = dp(wide ? 42 : 18);
-        root.setPadding(side, dp(wide ? 28 : 16), side, dp(18));
+        root.setPadding(dp(sidePaddingDp), dp(wideHeader ? 20 : 12), dp(sidePaddingDp), dp(12));
 
         LinearLayout top = new LinearLayout(this);
-        top.setOrientation(wide ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL);
-        top.setGravity(wide ? Gravity.CENTER_VERTICAL : Gravity.START);
-
-        LinearLayout brand = new LinearLayout(this);
-        brand.setOrientation(LinearLayout.HORIZONTAL);
-        brand.setGravity(Gravity.CENTER_VERTICAL);
+        top.setOrientation(LinearLayout.HORIZONTAL);
+        top.setGravity(Gravity.CENTER_VERTICAL);
 
         ImageView logo = new ImageView(this);
         logo.setImageResource(R.drawable.zoryvo_icon);
         logo.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        logo.setBackground(roundRect(Color.rgb(13, 27, 47), 16, Color.rgb(45, 79, 112), 1));
+        logo.setBackground(roundRect(Color.rgb(13, 27, 47), 14, Color.rgb(45, 79, 112), 1));
         logo.setClipToOutline(true);
-        brand.addView(logo, new LinearLayout.LayoutParams(dp(wide ? 58 : 48), dp(wide ? 58 : 48)));
+        int logoSize = dp(wideHeader ? 48 : 42);
+        top.addView(logo, new LinearLayout.LayoutParams(logoSize, logoSize));
 
         LinearLayout brandText = new LinearLayout(this);
         brandText.setOrientation(LinearLayout.VERTICAL);
-        LinearLayout.LayoutParams brandTextLp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        brandTextLp.setMarginStart(dp(14));
+        LinearLayout.LayoutParams brandLp = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+        brandLp.setMarginStart(dp(12));
 
-        TextView title = text("ZORYVO", wide ? 30 : 25, Color.WHITE, true);
-        TextView subtitle = text("مركز تطبيقاتك وتحديثاتها", wide ? 15 : 13, Color.rgb(145, 174, 204), false);
+        TextView title = text("ZORYVO", wideHeader ? 25 : 22, Color.WHITE, true);
+        TextView subtitle = text("مركز التطبيقات والتحديثات", wideHeader ? 13 : 11, Color.rgb(145, 174, 204), false);
         brandText.addView(title);
         brandText.addView(subtitle);
-        brand.addView(brandText, brandTextLp);
+        top.addView(brandText, brandLp);
 
-        top.addView(brand, new LinearLayout.LayoutParams(
-                wide ? 0 : LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                wide ? 1f : 0f));
+        TextView version = text("v" + BuildConfig.VERSION_NAME, 11, Color.rgb(137, 170, 204), false);
+        version.setBackground(roundRect(Color.rgb(14, 30, 50), 24, Color.rgb(44, 74, 103), 1));
+        version.setPadding(dp(9), dp(6), dp(9), dp(6));
+        top.addView(version);
 
-        LinearLayout actions = new LinearLayout(this);
-        actions.setOrientation(LinearLayout.HORIZONTAL);
-        actions.setGravity(Gravity.CENTER_VERTICAL);
-        if (!wide) actions.setPadding(0, dp(12), 0, 0);
-
-        TextView version = text("v" + BuildConfig.VERSION_NAME, 12, Color.rgb(137, 170, 204), false);
-        version.setBackground(roundRect(Color.rgb(14, 30, 50), 30, Color.rgb(44, 74, 103), 1));
-        version.setPadding(dp(11), dp(7), dp(11), dp(7));
-        actions.addView(version);
-
-        refreshButton = new Button(this);
-        refreshButton.setText("↻  مزامنة");
-        refreshButton.setTextSize(13);
-        refreshButton.setTextColor(Color.WHITE);
-        refreshButton.setAllCaps(false);
-        refreshButton.setFocusable(true);
-        refreshButton.setBackground(roundRect(Color.rgb(20, 59, 91), 22, Color.rgb(74, 154, 209), 1));
+        refreshButton = iconButton(R.drawable.ic_refresh, "مزامنة التطبيقات");
         refreshButton.setOnClickListener(v -> loadCatalog(false));
-        applyFocusAnimation(refreshButton);
-        LinearLayout.LayoutParams refreshLp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT, dp(46));
-        refreshLp.setMarginStart(dp(10));
-        actions.addView(refreshButton, refreshLp);
-        top.addView(actions);
+        LinearLayout.LayoutParams iconLp = new LinearLayout.LayoutParams(dp(42), dp(42));
+        iconLp.setMarginStart(dp(8));
+        top.addView(refreshButton, iconLp);
+
+        ImageButton settingsButton = iconButton(R.drawable.ic_settings, "إعدادات Zoryvo");
+        settingsButton.setOnClickListener(v -> showSettings());
+        LinearLayout.LayoutParams settingsLp = new LinearLayout.LayoutParams(dp(42), dp(42));
+        settingsLp.setMarginStart(dp(6));
+        top.addView(settingsButton, settingsLp);
 
         hubUpdateBanner = new LinearLayout(this);
-        hubUpdateBanner.setOrientation(wide ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL);
-        hubUpdateBanner.setGravity(wide ? Gravity.CENTER_VERTICAL : Gravity.START);
-        hubUpdateBanner.setPadding(dp(18), dp(14), dp(18), dp(14));
-        hubUpdateBanner.setBackground(roundRect(Color.rgb(18, 71, 109), 18, Color.rgb(83, 194, 255), 1));
+        hubUpdateBanner.setOrientation(wideHeader ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL);
+        hubUpdateBanner.setGravity(wideHeader ? Gravity.CENTER_VERTICAL : Gravity.START);
+        hubUpdateBanner.setPadding(dp(14), dp(10), dp(14), dp(10));
+        hubUpdateBanner.setBackground(roundRect(Color.rgb(18, 71, 109), 14, Color.rgb(83, 194, 255), 1));
         hubUpdateBanner.setVisibility(View.GONE);
 
-        hubUpdateText = text("", wide ? 16 : 14, Color.WHITE, true);
+        hubUpdateText = text("", wideHeader ? 14 : 13, Color.WHITE, true);
         hubUpdateBanner.addView(hubUpdateText, new LinearLayout.LayoutParams(
-                wide ? 0 : LinearLayout.LayoutParams.MATCH_PARENT,
+                wideHeader ? 0 : LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT,
-                wide ? 1f : 0f));
+                wideHeader ? 1f : 0f));
 
-        hubUpdateButton = new Button(this);
-        hubUpdateButton.setText("تحديث Zoryvo");
-        hubUpdateButton.setTextColor(Color.rgb(5, 21, 34));
-        hubUpdateButton.setTextSize(13);
-        hubUpdateButton.setTypeface(hubUpdateButton.getTypeface(), Typeface.BOLD);
-        hubUpdateButton.setAllCaps(false);
-        hubUpdateButton.setFocusable(true);
-        hubUpdateButton.setBackground(roundRect(Color.rgb(102, 211, 255), 20, Color.TRANSPARENT, 0));
-        applyFocusAnimation(hubUpdateButton);
-        LinearLayout.LayoutParams updateButtonLp = new LinearLayout.LayoutParams(
-                wide ? LinearLayout.LayoutParams.WRAP_CONTENT : LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(46));
-        if (wide) updateButtonLp.setMarginStart(dp(14)); else updateButtonLp.topMargin = dp(10);
-        hubUpdateBanner.addView(hubUpdateButton, updateButtonLp);
+        hubUpdateButton = button("تحديث الآن", true);
+        LinearLayout.LayoutParams updateLp = new LinearLayout.LayoutParams(
+                wideHeader ? LinearLayout.LayoutParams.WRAP_CONTENT : LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(42));
+        if (wideHeader) updateLp.setMarginStart(dp(12)); else updateLp.topMargin = dp(8);
+        hubUpdateBanner.addView(hubUpdateButton, updateLp);
 
         LinearLayout sectionHead = new LinearLayout(this);
         sectionHead.setOrientation(LinearLayout.HORIZONTAL);
         sectionHead.setGravity(Gravity.CENTER_VERTICAL);
 
-        TextView sectionTitle = text("التطبيقات", wide ? 24 : 21, Color.WHITE, true);
+        TextView sectionTitle = text("التطبيقات", wideHeader ? 20 : 18, Color.WHITE, true);
         sectionHead.addView(sectionTitle, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
 
-        status = text("جاري جلب الكتالوج…", 13, Color.rgb(132, 161, 190), false);
+        status = text("جاري المزامنة…", 11, Color.rgb(132, 161, 190), false);
         sectionHead.addView(status);
 
-        apps = new LinearLayout(this);
-        apps.setOrientation(wide ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL);
-        apps.setGravity(Gravity.START);
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
+        scroll.setVerticalScrollBarEnabled(false);
+
+        if (gridMode) {
+            GridLayout grid = new GridLayout(this);
+            grid.setColumnCount(gridColumns);
+            grid.setAlignmentMode(GridLayout.ALIGN_BOUNDS);
+            grid.setUseDefaultMargins(false);
+            apps = grid;
+        } else {
+            LinearLayout list = new LinearLayout(this);
+            list.setOrientation(LinearLayout.VERTICAL);
+            apps = list;
+        }
+
+        scroll.addView(apps, new ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         root.addView(top);
 
         LinearLayout.LayoutParams bannerLp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        bannerLp.topMargin = dp(18);
+        bannerLp.topMargin = dp(12);
         root.addView(hubUpdateBanner, bannerLp);
 
         LinearLayout.LayoutParams sectionLp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        sectionLp.topMargin = dp(wide ? 28 : 22);
-        sectionLp.bottomMargin = dp(12);
+        sectionLp.topMargin = dp(16);
+        sectionLp.bottomMargin = dp(8);
         root.addView(sectionHead, sectionLp);
 
-        if (wide) {
-            HorizontalScrollView scroll = new HorizontalScrollView(this);
-            scroll.setHorizontalScrollBarEnabled(false);
-            scroll.setClipToPadding(false);
-            scroll.addView(apps, new ViewGroup.LayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-            root.addView(scroll, new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
-        } else {
-            ScrollView scroll = new ScrollView(this);
-            scroll.setVerticalScrollBarEnabled(false);
-            scroll.setFillViewport(true);
-            scroll.addView(apps);
-            root.addView(scroll, new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
-        }
+        root.addView(scroll, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
 
         setContentView(root);
     }
@@ -209,8 +218,8 @@ public class MainActivity extends Activity {
             } catch (Exception e) {
                 runOnUiThread(() -> {
                     refreshButton.setEnabled(true);
-                    status.setText("تعذر الاتصال • أعد المحاولة");
-                    if (!silent) toast(e.getMessage() == null ? "خطأ شبكة" : e.getMessage());
+                    status.setText("تعذر الاتصال");
+                    if (!silent) toast("تعذر مزامنة الكتالوج");
                 });
             }
         }).start();
@@ -219,22 +228,31 @@ public class MainActivity extends Activity {
     private void renderCatalog(List<AppItem> catalog) {
         apps.removeAllViews();
         refreshButton.setEnabled(true);
+        currentHubItem = null;
 
-        AppItem hub = null;
+        List<AppCardView> cards = new ArrayList<>();
         int count = 0;
-        AppCardView first = null;
 
         for (AppItem item : catalog) {
             if (!item.enabled) continue;
             if (item.isHub(getPackageName())) {
-                hub = item;
+                currentHubItem = item;
                 continue;
             }
 
             Long installed = installedVersion(item.packageName);
+            int savedProgress = savedProgress(item);
+            boolean hasPartial = ResumableDownloader.partialFile(getCacheDir(), item).length() > 0;
+
             String state;
             String action;
-            if (installed == null) {
+
+            if (hasPartial && (installed == null || installed < item.versionCode)) {
+                state = savedProgress > 0
+                        ? "تنزيل محفوظ • " + savedProgress + "%"
+                        : "تنزيل غير مكتمل";
+                action = "متابعة";
+            } else if (installed == null) {
                 state = "غير مثبت";
                 action = "تثبيت";
             } else if (installed < item.versionCode) {
@@ -246,40 +264,238 @@ public class MainActivity extends Activity {
             }
 
             AppCardView card = new AppCardView(
-                    this, item, state, action, wide,
+                    this,
+                    item,
+                    state,
+                    action,
+                    gridMode,
                     () -> {
                         if (installed != null && installed >= item.versionCode) openApp(item.packageName);
                         else downloadAndInstall(item);
-                    });
+                    },
+                    () -> showAppManagement(item, installed));
 
-            LinearLayout.LayoutParams lp;
-            if (wide) {
-                lp = new LinearLayout.LayoutParams(dp(330), LinearLayout.LayoutParams.WRAP_CONTENT);
-                lp.setMarginEnd(dp(18));
-            } else {
-                lp = new LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-                lp.bottomMargin = dp(14);
-            }
-            apps.addView(card, lp);
-            if (first == null) first = card;
+            addCard(card, count);
+            cards.add(card);
             count++;
         }
 
-        status.setText(count + " تطبيقات • تمت المزامنة الآن");
-        renderHubUpdate(hub);
+        status.setText(count + " تطبيقات");
+        renderHubUpdate();
 
-        if (wide && first != null) first.requestFocus();
+        if (!cards.isEmpty() && getResources().getConfiguration().screenWidthDp >= 600) {
+            cards.get(0).requestFocus();
+        }
     }
 
-    private void renderHubUpdate(AppItem hub) {
-        if (hub != null && hub.versionCode > BuildConfig.VERSION_CODE) {
+    private void addCard(AppCardView card, int index) {
+        int widthDp = getResources().getConfiguration().screenWidthDp;
+        int gapDp = widthDp >= 700 ? 12 : 9;
+
+        if (gridMode) {
+            int availablePx = getResources().getDisplayMetrics().widthPixels
+                    - dp(sidePaddingDp * 2)
+                    - dp(gapDp * (gridColumns - 1));
+            int cardWidth = Math.max(dp(148), availablePx / gridColumns);
+
+            GridLayout.LayoutParams lp = new GridLayout.LayoutParams();
+            lp.width = cardWidth;
+            lp.height = GridLayout.LayoutParams.WRAP_CONTENT;
+            lp.columnSpec = GridLayout.spec(index % gridColumns);
+            lp.rowSpec = GridLayout.spec(index / gridColumns);
+            if ((index % gridColumns) < gridColumns - 1) lp.setMarginEnd(dp(gapDp));
+            lp.bottomMargin = dp(gapDp);
+            apps.addView(card, lp);
+        } else {
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT);
+            lp.bottomMargin = dp(8);
+            apps.addView(card, lp);
+        }
+    }
+
+    private void renderHubUpdate() {
+        if (currentHubItem != null && currentHubItem.versionCode > BuildConfig.VERSION_CODE) {
             hubUpdateBanner.setVisibility(View.VISIBLE);
-            hubUpdateText.setText("إصدار جديد من Zoryvo متاح  •  " + hub.versionName);
-            hubUpdateButton.setOnClickListener(v -> downloadAndInstall(hub));
+            hubUpdateText.setText("يتوفر Zoryvo " + currentHubItem.versionName);
+            hubUpdateButton.setOnClickListener(v -> downloadAndInstall(currentHubItem));
         } else {
             hubUpdateBanner.setVisibility(View.GONE);
         }
+    }
+
+    private void showSettings() {
+        Dialog dialog = new Dialog(this);
+        LinearLayout box = dialogBox();
+
+        TextView title = text("إعدادات Zoryvo", 20, Color.WHITE, true);
+        TextView version = text("الإصدار " + BuildConfig.VERSION_NAME, 12, Color.rgb(146, 174, 201), false);
+        version.setPadding(0, dp(4), 0, dp(14));
+        box.addView(title);
+        box.addView(version);
+
+        Button update = button(
+                currentHubItem != null && currentHubItem.versionCode > BuildConfig.VERSION_CODE
+                        ? "تحديث Zoryvo إلى " + currentHubItem.versionName
+                        : "التحقق من تحديث Zoryvo",
+                false);
+        update.setOnClickListener(v -> {
+            if (currentHubItem != null && currentHubItem.versionCode > BuildConfig.VERSION_CODE) {
+                dialog.dismiss();
+                downloadAndInstall(currentHubItem);
+            } else {
+                dialog.dismiss();
+                loadCatalog(false);
+                toast("تم التحقق من التحديثات");
+            }
+        });
+        box.addView(update, matchButtonLp());
+
+        TextView viewTitle = text("نوع العرض", 13, Color.rgb(184, 205, 225), true);
+        viewTitle.setPadding(0, dp(16), 0, dp(8));
+        box.addView(viewTitle);
+
+        LinearLayout modes = new LinearLayout(this);
+        modes.setOrientation(LinearLayout.HORIZONTAL);
+
+        String active = preferences.getString(KEY_VIEW_MODE, VIEW_AUTO);
+        modes.addView(viewModeButton("تلقائي", VIEW_AUTO, active, dialog), weightedButtonLp());
+        modes.addView(viewModeButton("شبكة", VIEW_GRID, active, dialog), weightedButtonLp());
+        modes.addView(viewModeButton("قائمة", VIEW_LIST, active, dialog), weightedButtonLp());
+        box.addView(modes);
+
+        Button clearDownloads = button("مسح التنزيلات غير المكتملة", false);
+        LinearLayout.LayoutParams clearLp = matchButtonLp();
+        clearLp.topMargin = dp(14);
+        clearDownloads.setOnClickListener(v -> {
+            clearPartialDownloads();
+            dialog.dismiss();
+            loadCatalog(true);
+            toast("تم مسح التنزيلات غير المكتملة");
+        });
+        box.addView(clearDownloads, clearLp);
+
+        TextView aboutTitle = text("حول", 13, Color.rgb(184, 205, 225), true);
+        aboutTitle.setPadding(0, dp(16), 0, dp(5));
+        TextView about = text(
+                "Zoryvo مدير خفيف للتطبيقات والتحديثات. لا يشغّل خدمة دائمة في الخلفية، وتُحفظ التنزيلات غير المكتملة محليًا للمتابعة لاحقًا.",
+                12,
+                Color.rgb(153, 180, 205),
+                false);
+        box.addView(aboutTitle);
+        box.addView(about);
+
+        showDialog(dialog, box, 520);
+    }
+
+    private Button viewModeButton(String label, String mode, String active, Dialog dialog) {
+        Button button = button(label, mode.equals(active));
+        button.setOnClickListener(v -> {
+            preferences.edit().putString(KEY_VIEW_MODE, mode).apply();
+            dialog.dismiss();
+            recreate();
+        });
+        return button;
+    }
+
+    private void showAppManagement(AppItem app, Long installedVersion) {
+        Dialog dialog = new Dialog(this);
+        LinearLayout box = dialogBox();
+
+        TextView title = text(app.name, 20, Color.WHITE, true);
+        TextView subtitle = text(
+                installedVersion == null ? "غير مثبت" : "إدارة التطبيق",
+                12,
+                Color.rgb(146, 174, 201),
+                false);
+        subtitle.setPadding(0, dp(4), 0, dp(14));
+        box.addView(title);
+        box.addView(subtitle);
+
+        if (installedVersion == null) {
+            Button install = button("تثبيت", true);
+            install.setOnClickListener(v -> {
+                dialog.dismiss();
+                downloadAndInstall(app);
+            });
+            box.addView(install, matchButtonLp());
+        } else {
+            Button open = button("فتح التطبيق", true);
+            open.setOnClickListener(v -> {
+                dialog.dismiss();
+                openApp(app.packageName);
+            });
+            box.addView(open, matchButtonLp());
+
+            if (installedVersion < app.versionCode) {
+                Button update = button("تحديث إلى " + app.versionName, false);
+                update.setOnClickListener(v -> {
+                    dialog.dismiss();
+                    downloadAndInstall(app);
+                });
+                LinearLayout.LayoutParams lp = matchButtonLp();
+                lp.topMargin = dp(8);
+                box.addView(update, lp);
+            }
+
+            Button info = button("معلومات التطبيق", false);
+            info.setOnClickListener(v -> {
+                Intent intent = new Intent(
+                        Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                        Uri.parse("package:" + app.packageName));
+                startActivity(intent);
+                dialog.dismiss();
+            });
+            LinearLayout.LayoutParams infoLp = matchButtonLp();
+            infoLp.topMargin = dp(8);
+            box.addView(info, infoLp);
+
+            Button uninstall = button("إزالة التثبيت", false);
+            uninstall.setOnClickListener(v -> {
+                Intent intent = new Intent(Intent.ACTION_DELETE, Uri.parse("package:" + app.packageName));
+                startActivity(intent);
+                dialog.dismiss();
+            });
+            LinearLayout.LayoutParams uninstallLp = matchButtonLp();
+            uninstallLp.topMargin = dp(8);
+            box.addView(uninstall, uninstallLp);
+        }
+
+        showDialog(dialog, box, 440);
+    }
+
+    private void showDialog(Dialog dialog, View content, int widthDp) {
+        dialog.setContentView(content);
+        dialog.setCancelable(true);
+        dialog.show();
+        Window window = dialog.getWindow();
+        if (window != null) {
+            window.setBackgroundDrawableResource(android.R.color.transparent);
+            int screenWidthDp = getResources().getConfiguration().screenWidthDp;
+            window.setLayout(
+                    screenWidthDp >= 600 ? dp(widthDp) : ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT);
+        }
+    }
+
+    private LinearLayout dialogBox() {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(20), dp(18), dp(20), dp(18));
+        box.setBackground(roundRect(Color.rgb(15, 31, 51), 18, Color.rgb(55, 92, 126), 1));
+        return box;
+    }
+
+    private LinearLayout.LayoutParams matchButtonLp() {
+        return new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(44));
+    }
+
+    private LinearLayout.LayoutParams weightedButtonLp() {
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(42), 1f);
+        lp.setMarginEnd(dp(6));
+        return lp;
     }
 
     private Long installedVersion(String packageName) {
@@ -308,73 +524,69 @@ public class MainActivity extends Activity {
         }
 
         Dialog dialog = new Dialog(this);
-        LinearLayout box = new LinearLayout(this);
-        box.setOrientation(LinearLayout.VERTICAL);
-        box.setPadding(dp(24), dp(22), dp(24), dp(22));
-        box.setBackground(roundRect(Color.rgb(15, 31, 51), 22, Color.rgb(55, 92, 126), 1));
+        LinearLayout box = dialogBox();
 
         TextView title = text("تنزيل " + app.name, 18, Color.WHITE, true);
-        TextView detail = text("جاري التحضير…", 13, Color.rgb(162, 189, 214), false);
-        detail.setPadding(0, dp(8), 0, dp(12));
+        int initial = savedProgress(app);
+        TextView detail = text(
+                initial > 0 ? "متابعة التنزيل من " + initial + "%" : "جاري التحضير…",
+                12,
+                Color.rgb(162, 189, 214),
+                false);
+        detail.setPadding(0, dp(8), 0, dp(10));
 
         ProgressBar progress = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
         progress.setMax(100);
-        progress.setProgress(0);
+        progress.setProgress(initial);
 
         box.addView(title);
         box.addView(detail);
         box.addView(progress, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(8)));
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(7)));
 
-        dialog.setContentView(box);
+        showDialog(dialog, box, 520);
         dialog.setCancelable(false);
-        dialog.show();
-        if (dialog.getWindow() != null) {
-            dialog.getWindow().setBackgroundDrawableResource(android.R.color.transparent);
-            dialog.getWindow().setLayout(
-                    wide ? dp(520) : ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT);
-        }
 
         new Thread(() -> {
+            File downloaded = null;
             try {
                 File dir = new File(getCacheDir(), "updates");
-                if (!dir.exists() && !dir.mkdirs()) throw new IllegalStateException("تعذر إنشاء مجلد التنزيل");
-                File file = new File(dir, app.id + "-" + app.versionCode + ".apk");
-
-                HttpURLConnection connection = openConnection(app.apkUrl, 120_000);
-                long total = connection.getContentLength();
-                int[] lastPercent = {-1};
-
-                try (java.io.InputStream input = connection.getInputStream();
-                     java.io.FileOutputStream output = new java.io.FileOutputStream(file)) {
-                    byte[] buffer = new byte[32768];
-                    int read;
-                    long done = 0;
-                    while ((read = input.read(buffer)) >= 0) {
-                        output.write(buffer, 0, read);
-                        done += read;
-                        if (total > 0) {
-                            int pct = (int) Math.min(100, done * 100 / total);
-                            if (pct != lastPercent[0]) {
-                                lastPercent[0] = pct;
-                                runOnUiThread(() -> {
-                                    progress.setProgress(pct);
-                                    detail.setText("جاري التنزيل  •  " + pct + "%");
-                                });
-                            }
-                        }
-                    }
-                } finally {
-                    connection.disconnect();
+                if (!dir.exists() && !dir.mkdirs()) {
+                    throw new IllegalStateException("تعذر إنشاء مجلد التنزيل");
                 }
 
-                runOnUiThread(() -> detail.setText("جاري التحقق من الملف…"));
-                verifyDownloadedApk(app, file);
+                downloaded = ResumableDownloader.download(
+                        dir,
+                        app,
+                        "Zoryvo-App-Hub/" + BuildConfig.VERSION_NAME,
+                        (done, total) -> {
+                            int pct = total > 0 ? (int) Math.min(100, (done * 100L) / total) : 0;
+                            saveProgress(app, pct);
+                            runOnUiThread(() -> {
+                                progress.setProgress(pct);
+                                detail.setText("جاري التنزيل • " + pct + "%");
+                            });
+                        });
 
+                runOnUiThread(() -> detail.setText("جاري التحقق من الملف…"));
+
+                try {
+                    verifyDownloadedApk(app, downloaded);
+                } catch (Exception verificationError) {
+                    downloaded.delete();
+                    ResumableDownloader.partialFile(getCacheDir(), app).delete();
+                    clearProgress(app);
+                    throw verificationError;
+                }
+
+                clearProgress(app);
+                File finalDownloaded = downloaded;
                 runOnUiThread(() -> {
                     dialog.dismiss();
-                    Uri uri = FileProvider.getUriForFile(this, getPackageName() + ".files", file);
+                    Uri uri = FileProvider.getUriForFile(
+                            this,
+                            getPackageName() + ".files",
+                            finalDownloaded);
                     Intent intent = new Intent(Intent.ACTION_VIEW);
                     intent.setDataAndType(uri, "application/vnd.android.package-archive");
                     intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
@@ -385,12 +597,50 @@ public class MainActivity extends Activity {
                     }
                 });
             } catch (Exception e) {
+                int saved = savedProgress(app);
                 runOnUiThread(() -> {
                     dialog.dismiss();
-                    toast("فشل التنزيل: " + (e.getMessage() == null ? "خطأ" : e.getMessage()));
+                    loadCatalog(true);
+                    if (saved > 0) {
+                        toast("توقف التنزيل عند " + saved + "% وتم حفظه للمتابعة");
+                    } else {
+                        toast("تعذر بدء التنزيل");
+                    }
                 });
             }
         }).start();
+    }
+
+    private int savedProgress(AppItem app) {
+        return preferences.getInt(progressKey(app), 0);
+    }
+
+    private void saveProgress(AppItem app, int progress) {
+        preferences.edit().putInt(progressKey(app), progress).apply();
+    }
+
+    private void clearProgress(AppItem app) {
+        preferences.edit().remove(progressKey(app)).apply();
+    }
+
+    private String progressKey(AppItem app) {
+        return "download_pct_" + app.id + "_" + app.versionCode;
+    }
+
+    private void clearPartialDownloads() {
+        File dir = new File(getCacheDir(), "updates");
+        File[] files = dir.listFiles();
+        if (files != null) {
+            for (File file : files) {
+                if (file.getName().endsWith(".part")) file.delete();
+            }
+        }
+
+        SharedPreferences.Editor editor = preferences.edit();
+        for (Map.Entry<String, ?> entry : preferences.getAll().entrySet()) {
+            if (entry.getKey().startsWith("download_pct_")) editor.remove(entry.getKey());
+        }
+        editor.apply();
     }
 
     private void verifyDownloadedApk(AppItem app, File file) throws Exception {
@@ -424,19 +674,6 @@ public class MainActivity extends Activity {
         return out.toString();
     }
 
-    private HttpURLConnection openConnection(String url, int readTimeoutMs) throws Exception {
-        HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
-        c.setInstanceFollowRedirects(true);
-        c.setConnectTimeout(15_000);
-        c.setReadTimeout(readTimeoutMs);
-        c.setRequestProperty("Cache-Control", "no-cache");
-        c.setRequestProperty("User-Agent", "Zoryvo-App-Hub/" + BuildConfig.VERSION_NAME);
-        c.connect();
-        if (c.getResponseCode() < 200 || c.getResponseCode() > 299)
-            throw new IllegalStateException("HTTP " + c.getResponseCode());
-        return c;
-    }
-
     private TextView text(String value, int size, int color, boolean bold) {
         TextView view = new TextView(this);
         view.setText(value);
@@ -444,6 +681,35 @@ public class MainActivity extends Activity {
         view.setTextColor(color);
         if (bold) view.setTypeface(view.getTypeface(), Typeface.BOLD);
         return view;
+    }
+
+    private Button button(String label, boolean primary) {
+        Button button = new Button(this);
+        button.setText(label);
+        button.setAllCaps(false);
+        button.setTextSize(13);
+        button.setTextColor(Color.WHITE);
+        button.setTypeface(button.getTypeface(), primary ? Typeface.BOLD : Typeface.NORMAL);
+        button.setFocusable(true);
+        button.setBackground(roundRect(
+                primary ? Color.rgb(25, 102, 151) : Color.rgb(22, 48, 72),
+                14,
+                primary ? Color.rgb(75, 166, 220) : Color.rgb(52, 86, 116),
+                1));
+        applyFocusAnimation(button);
+        return button;
+    }
+
+    private ImageButton iconButton(int drawable, String description) {
+        ImageButton button = new ImageButton(this);
+        button.setImageResource(drawable);
+        button.setContentDescription(description);
+        button.setPadding(dp(10), dp(10), dp(10), dp(10));
+        button.setColorFilter(Color.WHITE);
+        button.setBackground(roundRect(Color.rgb(16, 37, 59), 14, Color.rgb(48, 84, 116), 1));
+        button.setFocusable(true);
+        applyFocusAnimation(button);
+        return button;
     }
 
     private GradientDrawable roundRect(int fill, int radiusDp, int stroke, int strokeDp) {
@@ -456,9 +722,9 @@ public class MainActivity extends Activity {
 
     private void applyFocusAnimation(View view) {
         view.setOnFocusChangeListener((v, focused) -> v.animate()
-                .scaleX(focused ? 1.06f : 1f)
-                .scaleY(focused ? 1.06f : 1f)
-                .setDuration(150)
+                .scaleX(focused ? 1.05f : 1f)
+                .scaleY(focused ? 1.05f : 1f)
+                .setDuration(120)
                 .start());
     }
 
