@@ -43,7 +43,7 @@ jobs:
         run: |
           set -euo pipefail
           grep -q 'minSdk = 21' app/build.gradle.kts
-          grep -q 'versionCode = 5' app/build.gradle.kts
+          grep -q 'versionCode = 6' app/build.gradle.kts
           grep -q 'android.intent.category.LAUNCHER' app/src/main/AndroidManifest.xml
           grep -q 'android.intent.category.LEANBACK_LAUNCHER' app/src/main/AndroidManifest.xml
           test -s app/src/main/res/drawable/zoryvo_icon.xml
@@ -68,7 +68,7 @@ jobs:
         run: |
           set -euo pipefail
           $ANDROID_HOME/build-tools/36.0.0/aapt dump badging /tmp/Zoryvo.apk | tee /tmp/badging.txt
-          grep -q "package: name='com.zoryvo.hub' versionCode='5'" /tmp/badging.txt
+          grep -q "package: name='com.zoryvo.hub' versionCode='6'" /tmp/badging.txt
           grep -q "sdkVersion:'21'" /tmp/badging.txt
           grep -q "application-label:'Zoryvo'" /tmp/badging.txt
           grep -q "launchable-activity: name='com.zoryvo.hub.MainActivity'" /tmp/badging.txt
@@ -88,7 +88,7 @@ jobs:
           TAG=hub-latest
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" /tmp/Zoryvo.apk --clobber
-            gh release edit "$TAG" --title "Zoryvo" --notes "Zoryvo 0.5.0 — lighter compact cards, adaptive list/grid, settings, app management, and resumable downloads." --latest
+            gh release edit "$TAG" --title "Zoryvo" --notes "Zoryvo 0.5.1 — deterministic TV remote focus and corrected list-card alignment." --latest
           else
-            gh release create "$TAG" /tmp/Zoryvo.apk               --title "Zoryvo"               --notes "Zoryvo 0.5.0 — lighter compact cards, adaptive list/grid, settings, app management, and resumable downloads."               --latest
+            gh release create "$TAG" /tmp/Zoryvo.apk               --title "Zoryvo"               --notes "Zoryvo 0.5.1 — deterministic TV remote focus and corrected list-card alignment."               --latest
           fi
