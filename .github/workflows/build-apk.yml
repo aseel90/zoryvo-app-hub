@@ -1,1 +1,108 @@
-The requested file reference is not currently visible. Use files.search or files.list to rediscover the file, then retry with a returned ref_id or file_id.
+name: Build Zoryvo APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'app/**'
+      - 'settings.gradle.kts'
+      - 'build.gradle.kts'
+      - 'gradle.properties'
+      - '.github/workflows/build-apk.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: ''
+
+      - name: Install Android SDK 36
+        run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+
+      - name: Install Gradle 8.13
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+
+      - name: Verify compatibility contract
+        run: |
+          set -euo pipefail
+          grep -q 'minSdk = 21' app/build.gradle.kts
+          grep -q 'versionCode = 7' app/build.gradle.kts
+          grep -q 'android.intent.category.LAUNCHER' app/src/main/AndroidManifest.xml
+          grep -q 'android.intent.category.LEANBACK_LAUNCHER' app/src/main/AndroidManifest.xml
+          test -s app/src/main/res/drawable/zoryvo_icon.xml
+          test -s app/src/main/res/drawable/zoryvo_tv_banner.xml
+          test -s app/src/main/res/drawable/ic_settings.xml
+          test -s app/src/main/res/drawable/ic_refresh.xml
+          test -s app/src/main/res/drawable/ic_more.xml
+          test -s app/src/main/assets/catalog-fallback.json
+          test -s app/src/test/java/com/zoryvo/hub/ui/LayoutPolicyTest.java
+          ! grep -q 'bringToFront' app/src/main/java/com/zoryvo/hub/ui/AppCardView.java
+          ! grep -q 'focusSearch(' app/src/main/java/com/zoryvo/hub/ui/AppCardView.java
+
+      - name: Run unit tests
+        run: gradle :app:testDebugUnitTest --stacktrace
+
+      - name: Build APK
+        run: gradle :app:assembleDebug --stacktrace
+
+      - name: Re-sign with stable temporary key
+        run: |
+          set -euo pipefail
+          curl -fsSL https://raw.githubusercontent.com/aosp-mirror/platform_build/main/target/product/security/testkey.pk8 -o /tmp/zoryvo-testkey.pk8
+          curl -fsSL https://raw.githubusercontent.com/aosp-mirror/platform_build/main/target/product/security/testkey.x509.pem -o /tmp/zoryvo-testkey.x509.pem
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          $ANDROID_HOME/build-tools/36.0.0/apksigner sign \
+            --key /tmp/zoryvo-testkey.pk8 \
+            --cert /tmp/zoryvo-testkey.x509.pem \
+            --out /tmp/Zoryvo.apk \
+            "$APK"
+          $ANDROID_HOME/build-tools/36.0.0/apksigner verify --print-certs /tmp/Zoryvo.apk
+
+      - name: Verify APK identity and launch modes
+        run: |
+          set -euo pipefail
+          $ANDROID_HOME/build-tools/36.0.0/aapt dump badging /tmp/Zoryvo.apk | tee /tmp/badging.txt
+          grep -q "package: name='com.zoryvo.hub' versionCode='7'" /tmp/badging.txt
+          grep -q "sdkVersion:'21'" /tmp/badging.txt
+          grep -q "application-label:'Zoryvo'" /tmp/badging.txt
+          grep -q "launchable-activity: name='com.zoryvo.hub.MainActivity'" /tmp/badging.txt
+          grep -q "leanback-launchable-activity: name='com.zoryvo.hub.MainActivity'" /tmp/badging.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Zoryvo-APK
+          path: /tmp/Zoryvo.apk
+          if-no-files-found: error
+
+      - name: Publish stable Zoryvo download
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG=hub-latest
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" /tmp/Zoryvo.apk --clobber
+            gh release edit "$TAG" --title "Zoryvo" --notes "Zoryvo 0.6.0 — rebuilt cross-device focus/navigation, responsive layout, offline catalog fallback, TV launch support, and safer resumable downloads." --latest
+          else
+            gh release create "$TAG" /tmp/Zoryvo.apk \
+              --title "Zoryvo" \
+              --notes "Zoryvo 0.6.0 — rebuilt cross-device focus/navigation, responsive layout, offline catalog fallback, TV launch support, and safer resumable downloads." \
+              --latest
+          fi
