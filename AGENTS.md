@@ -58,3 +58,17 @@ Source repositories may later trigger Zoryvo's publishing workflow using a dedic
 - `feather-fury` -> `com.aseel.featherfury` -> `Feather-Fury.apk`
 
 When adding future apps, add the mapping to `catalog/apps.json` and preserve it across releases.
+
+## Cross-device UI / D-pad contract
+
+Zoryvo targets Android 5.0+ phones, tablets and TV-class devices from one APK. Preserve these rules:
+- Do not call `bringToFront()` as a focus effect on catalog cards; it changes child order and breaks deterministic navigation.
+- Do not implement card navigation by overriding `focusSearch()`. Build explicit directional focus links after rendering instead.
+- Keep physical card geometry deterministic for D-pad navigation, while text direction can follow its content.
+- Preserve usable touch targets and a visible non-scaling focus state.
+- Use window/configuration width rather than full-display pixels when choosing responsive layout behavior.
+- When opening installed apps, fall back to a Leanback launch intent for TV-only packages.
+- Returning from installers/settings must not force an unnecessary remote catalog fetch or reset the selected app.
+- Any layout/navigation change must keep `LayoutPolicyTest` green and should extend its cases when rules change.
+
+See `docs/CROSS-DEVICE-REVIEW.md` for the current rationale and compatibility matrix.

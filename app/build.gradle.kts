@@ -10,8 +10,8 @@ android {
         applicationId = "com.zoryvo.hub"
         minSdk = 21
         targetSdk = 36
-        versionCode = 6
-        versionName = "0.5.1"
+        versionCode = 7
+        versionName = "0.6.0"
         buildConfigField(
             "String",
             "CATALOG_URL",
@@ -36,6 +36,7 @@ android {
 }
 
 dependencies {
-    // Deliberately lightweight: no UI framework or background-work dependency.
+    // Deliberately lightweight: standard Android Views + AndroidX Core only at runtime.
     implementation("androidx.core:core:1.13.1")
+    testImplementation("junit:junit:4.13.2")
 }

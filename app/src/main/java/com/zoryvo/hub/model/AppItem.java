@@ -41,6 +41,14 @@ public final class AppItem {
         return "hub".equalsIgnoreCase(kind) || ownPackage.equals(packageName);
     }
 
+    public boolean isValid() {
+        return id != null && !id.trim().isEmpty()
+                && name != null && !name.trim().isEmpty()
+                && packageName != null && packageName.contains(".")
+                && versionCode > 0
+                && apkUrl != null && apkUrl.startsWith("https://");
+    }
+
     public static AppItem from(JSONObject o) {
         long code = o.optLong("versionCode", 1);
         List<String> formFactors = new ArrayList<>();
@@ -53,16 +61,16 @@ public final class AppItem {
         }
 
         return new AppItem(
-                o.optString("id"),
-                o.optString("name"),
-                o.optString("packageName"),
+                o.optString("id", "").trim(),
+                o.optString("name", "").trim(),
+                o.optString("packageName", "").trim(),
                 code,
-                o.optString("versionName", Long.toString(code)),
-                o.optString("apkUrl"),
-                o.optString("iconUrl", ""),
-                o.optString("notes", ""),
-                o.optString("sha256", ""),
-                o.optString("kind", "app"),
+                o.optString("versionName", Long.toString(code)).trim(),
+                o.optString("apkUrl", "").trim(),
+                o.optString("iconUrl", "").trim(),
+                o.optString("notes", "").trim(),
+                o.optString("sha256", "").trim(),
+                o.optString("kind", "app").trim(),
                 o.optBoolean("enabled", true),
                 formFactors
         );
