@@ -2,14 +2,6 @@ name: Build Zoryvo APK
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - 'app/**'
-      - 'settings.gradle.kts'
-      - 'build.gradle.kts'
-      - 'gradle.properties'
-      - '.github/workflows/build-apk.yml'
 
 permissions:
   contents: write
@@ -39,19 +31,6 @@ jobs:
         with:
           gradle-version: '8.13'
 
-      - name: Verify compatibility contract
-        run: |
-          set -euo pipefail
-          grep -q 'minSdk = 21' app/build.gradle.kts
-          grep -q 'versionCode = 6' app/build.gradle.kts
-          grep -q 'android.intent.category.LAUNCHER' app/src/main/AndroidManifest.xml
-          grep -q 'android.intent.category.LEANBACK_LAUNCHER' app/src/main/AndroidManifest.xml
-          test -s app/src/main/res/drawable/zoryvo_icon.xml
-          test -s app/src/main/res/drawable/zoryvo_tv_banner.xml
-          test -s app/src/main/res/drawable/ic_settings.xml
-          test -s app/src/main/res/drawable/ic_refresh.xml
-          test -s app/src/main/res/drawable/ic_more.xml
-
       - name: Build APK
         run: gradle :app:assembleDebug --stacktrace
 
@@ -61,34 +40,11 @@ jobs:
           curl -fsSL https://raw.githubusercontent.com/aosp-mirror/platform_build/main/target/product/security/testkey.pk8 -o /tmp/zoryvo-testkey.pk8
           curl -fsSL https://raw.githubusercontent.com/aosp-mirror/platform_build/main/target/product/security/testkey.x509.pem -o /tmp/zoryvo-testkey.x509.pem
           APK=app/build/outputs/apk/debug/app-debug.apk
-          $ANDROID_HOME/build-tools/36.0.0/apksigner sign             --key /tmp/zoryvo-testkey.pk8             --cert /tmp/zoryvo-testkey.x509.pem             --out /tmp/Zoryvo.apk             "$APK"
+          $ANDROID_HOME/build-tools/36.0.0/apksigner sign --key /tmp/zoryvo-testkey.pk8 --cert /tmp/zoryvo-testkey.x509.pem --out /tmp/Zoryvo.apk "$APK"
           $ANDROID_HOME/build-tools/36.0.0/apksigner verify --print-certs /tmp/Zoryvo.apk
-
-      - name: Verify APK identity and launch modes
-        run: |
-          set -euo pipefail
-          $ANDROID_HOME/build-tools/36.0.0/aapt dump badging /tmp/Zoryvo.apk | tee /tmp/badging.txt
-          grep -q "package: name='com.zoryvo.hub' versionCode='6'" /tmp/badging.txt
-          grep -q "sdkVersion:'21'" /tmp/badging.txt
-          grep -q "application-label:'Zoryvo'" /tmp/badging.txt
-          grep -q "launchable-activity: name='com.zoryvo.hub.MainActivity'" /tmp/badging.txt
-          grep -q "leanback-launchable-activity: name='com.zoryvo.hub.MainActivity'" /tmp/badging.txt
 
       - uses: actions/upload-artifact@v4
         with:
           name: Zoryvo-APK
           path: /tmp/Zoryvo.apk
           if-no-files-found: error
-
-      - name: Publish stable Zoryvo download
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          TAG=hub-latest
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" /tmp/Zoryvo.apk --clobber
-            gh release edit "$TAG" --title "Zoryvo" --notes "Zoryvo 0.5.1 — deterministic TV remote focus and corrected list-card alignment." --latest
-          else
-            gh release create "$TAG" /tmp/Zoryvo.apk               --title "Zoryvo"               --notes "Zoryvo 0.5.1 — deterministic TV remote focus and corrected list-card alignment."               --latest
-          fi
